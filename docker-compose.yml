@@ -2,16 +2,21 @@ version: '3'
 
 services:
   openresty:
-    image: openresty/openresty:alpine
+    image: openresty/openresty:1.21.4.1-alpine-fat
     container_name: mcp-proxy
     ports:
       - "8080:80"
     volumes:
+      - ./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/lua:/etc/nginx/lua
       - ./data:/data
     command: >
-      sh -c "echo 'upstream mcp_backend { server ${MCP_TARGET_HOST}:${MCP_TARGET_PORT}; }' > /etc/nginx/conf.d/upstream.conf && 
+      sh -c "apk add --no-cache git gcc libc-dev openssl-dev &&
+             /usr/local/openresty/luajit/bin/luarocks install lua-resty-http &&
+             /usr/local/openresty/luajit/bin/luarocks install lua-resty-session 3.10 &&
+             /usr/local/openresty/luajit/bin/luarocks install lua-resty-openidc 1.7.6 &&
+             echo 'upstream mcp_backend { server ${MCP_TARGET_HOST}:${MCP_TARGET_PORT}; }' > /etc/nginx/conf.d/upstream.conf && 
              openresty -g 'daemon off;'"
     env_file:
       - .env

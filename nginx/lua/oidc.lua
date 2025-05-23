@@ -51,18 +51,11 @@ function _M.build_oidc_opts(redirect_uri)
         redirect_uri_scheme = "http",
         scope = oidc_config.scope,
         use_pkce = oidc_config.use_pkce,
-        session_storage = {
-            name = "redis",
-            redis = {
-                host = "redis",
-                port = 6379,
-                prefix = "mcp:sessions:"
-            }
-        },
         discovery_expires_in = 86400,
         token_endpoint_auth_method = "client_secret_basic",
         refresh_session_interval = 600,
-        log_level = "debug"
+        log_level = "debug",
+        ssl_verify = "no"
     }
 end
 
@@ -70,18 +63,13 @@ end
 function _M.get_session_opts()
     return {
         name = "mcp_session",
+        secret = "change_me_to_a_random_string_32_bytes_long",
         cookie = {
             secure = false,  -- HTTPでも動作するようにfalseに変更
             httponly = true,
             samesite = "Lax",
             path = "/",
-            max_age = 3600 * 8 -- 8時間
-        },
-        storage = "redis",
-        redis = {
-            host = "redis",
-            port = 6379,
-            prefix = "mcp:sessions:"
+            lifetime = 3600 * 8 -- 8時間
         }
     }
 end

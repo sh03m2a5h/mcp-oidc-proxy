@@ -20,10 +20,17 @@ export $(grep -v '^#' .env | xargs)
 echo "MCP認証プロキシを起動します..."
 docker compose up -d
 
-# 依存関係のインストール
-echo "必要な依存関係をインストールします..."
-sleep 5  # コンテナが完全に起動するのを待つ
-./install-deps.sh
+# コンテナの起動を待つ
+echo "コンテナの起動を待っています..."
+for i in {1..30}; do
+    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+        echo "ヘルスチェック成功！"
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+echo ""
 
 echo "======================="
 echo "MCP認証プロキシが起動しました！"

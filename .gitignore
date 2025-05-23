@@ -3,6 +3,9 @@
 .env.local
 .env.production
 
+# Generated nginx configuration
+nginx/conf.d/upstream.conf
+
 # Redis data
 data/redis/
 

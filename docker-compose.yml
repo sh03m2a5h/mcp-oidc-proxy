@@ -2,7 +2,7 @@ version: '3'
 
 services:
   openresty:
-    image: openresty/openresty:1.21.4.1-alpine-fat
+    image: openresty/openresty:1.27.1.2-alpine-fat
     container_name: mcp-proxy
     ports:
       - "8080:80"
@@ -14,8 +14,8 @@ services:
     command: >
       sh -c "apk add --no-cache git gcc libc-dev openssl-dev &&
              /usr/local/openresty/luajit/bin/luarocks install lua-resty-http &&
-             /usr/local/openresty/luajit/bin/luarocks install lua-resty-session 3.10 &&
-             /usr/local/openresty/luajit/bin/luarocks install lua-resty-openidc 1.7.6 &&
+             /usr/local/openresty/luajit/bin/luarocks install lua-resty-session 4.0.5 &&
+             /usr/local/openresty/luajit/bin/luarocks install lua-resty-openidc 1.8.0 &&
              echo 'upstream mcp_backend { server ${MCP_TARGET_HOST}:${MCP_TARGET_PORT}; }' > /etc/nginx/conf.d/upstream.conf && 
              openresty -g 'daemon off;'"
     env_file:
@@ -46,7 +46,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: mcp-redis
     networks:
       - mcp-network

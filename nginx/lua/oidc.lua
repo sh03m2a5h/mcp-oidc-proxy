@@ -48,6 +48,7 @@ function _M.build_oidc_opts(redirect_uri)
         client_id = oidc_config.client_id,
         client_secret = oidc_config.client_secret,
         redirect_uri = redirect_uri or "http://localhost:8080/callback",
+        redirect_uri_scheme = "http",
         scope = oidc_config.scope,
         use_pkce = oidc_config.use_pkce,
         session_storage = {

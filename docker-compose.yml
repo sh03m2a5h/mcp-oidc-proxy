@@ -10,6 +10,11 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/lua:/etc/nginx/lua
       - ./data:/data
+    command: >
+      sh -c "echo 'upstream mcp_backend { server ${MCP_TARGET_HOST}:${MCP_TARGET_PORT}; }' > /etc/nginx/conf.d/upstream.conf && 
+             openresty -g 'daemon off;'"
+    env_file:
+      - .env
     environment:
       - AUTH_MODE=${AUTH_MODE:-bypass}
       # Generic OIDC settings
@@ -23,13 +28,17 @@ services:
       - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID:-}
       - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET:-}
       # MCP target server
-      - MCP_TARGET_HOST=${MCP_TARGET_HOST:-localhost}
+      - MCP_TARGET_HOST=${MCP_TARGET_HOST:-host.docker.internal}
       - MCP_TARGET_PORT=${MCP_TARGET_PORT:-3000}
+      # Redis configuration
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     networks:
       - mcp-network
     depends_on:
       - redis
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   redis:
     image: redis:alpine

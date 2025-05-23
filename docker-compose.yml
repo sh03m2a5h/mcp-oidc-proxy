@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  openresty:
+    image: openresty/openresty:alpine
+    container_name: mcp-proxy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/lua:/etc/nginx/lua
+      - ./data:/data
+    environment:
+      - AUTH_MODE=${AUTH_MODE:-bypass}
+      # Generic OIDC settings
+      - OIDC_DISCOVERY_URL=${OIDC_DISCOVERY_URL:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_SCOPE=${OIDC_SCOPE:-openid email profile}
+      - OIDC_USE_PKCE=${OIDC_USE_PKCE:-true}
+      # Legacy Auth0 support (will be converted to OIDC settings)
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN:-}
+      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID:-}
+      - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET:-}
+      # MCP target server
+      - MCP_TARGET_HOST=${MCP_TARGET_HOST:-localhost}
+      - MCP_TARGET_PORT=${MCP_TARGET_PORT:-3000}
+    networks:
+      - mcp-network
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: mcp-redis
+    networks:
+      - mcp-network
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+
+networks:
+  mcp-network:
+    driver: bridge

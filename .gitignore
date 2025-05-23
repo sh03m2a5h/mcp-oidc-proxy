@@ -1,0 +1,45 @@
+# Environment files
+.env
+.env.local
+.env.production
+
+# Redis data
+data/redis/
+
+# Docker volumes
+data/
+
+# Logs
+*.log
+logs/
+
+# SSL certificates (if any)
+*.crt
+*.key
+*.pem
+
+# Backup files
+*.bak
+*.tmp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules (if any)
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+tmp/
+temp/

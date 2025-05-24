@@ -68,7 +68,9 @@ type OIDCConfig struct {
 	Scopes                 []string `mapstructure:"scopes"`
 	UsePKCE                bool     `mapstructure:"use_pkce"`
 	RedirectURL            string   `mapstructure:"redirect_url"`
-	PostLogoutRedirectURL  string   `mapstructure:"post_logout_redirect_url"`
+	EndSessionEndpoint     string   `mapstructure:"end_session_endpoint"`
+	PostLogoutRedirectURI  string   `mapstructure:"post_logout_redirect_uri"`
+	UseUserInfo            bool     `mapstructure:"use_userinfo"`
 }
 
 // SessionConfig holds session management configuration

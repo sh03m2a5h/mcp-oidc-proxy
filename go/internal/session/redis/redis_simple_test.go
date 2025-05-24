@@ -102,6 +102,26 @@ func TestRedisStoreWithMiniredis(t *testing.T) {
 		assert.False(t, exists)
 	})
 
+	t.Run("Refresh session", func(t *testing.T) {
+		// Create a session first
+		testData := TestData{ID: "refresh_test", Name: "Test"}
+		sessionID, err := store.Create(ctx, "refresh_session", testData, time.Hour)
+		require.NoError(t, err)
+
+		// Refresh the session TTL
+		err = store.Refresh(ctx, sessionID, 2*time.Hour)
+		require.NoError(t, err)
+
+		// Session should still exist
+		exists, err := store.Exists(ctx, sessionID)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Clean up
+		err = store.Delete(ctx, sessionID)
+		require.NoError(t, err)
+	})
+
 	t.Run("Delete session", func(t *testing.T) {
 		err := store.Delete(ctx, "session1")
 		require.NoError(t, err)

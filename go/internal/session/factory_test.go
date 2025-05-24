@@ -1,8 +1,10 @@
 package session
 
 import (
+	"context"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,32 +40,31 @@ func TestCreateMemoryStore(t *testing.T) {
 }
 
 func TestCreateRedisStore(t *testing.T) {
+	// Use miniredis for hermetic testing
+	s, err := miniredis.Run()
+	require.NoError(t, err)
+	defer s.Close()
+
 	logger := zap.NewNop()
 	factory := NewFactory(logger)
 
 	config := &config.SessionConfig{
 		Store: "redis",
 		Redis: config.RedisConfig{
-			URL:       "redis://localhost:6379/0",
+			URL:       "redis://" + s.Addr(),
 			KeyPrefix: "test:",
 		},
 	}
 
-	// This test will fail if Redis is not available, which is expected
 	store, err := factory.CreateStore(config)
-	if err != nil {
-		// If Redis is not available, we expect a connection error
-		assert.Contains(t, err.Error(), "failed to create Redis session store")
-		return
-	}
-
-	// If Redis is available, verify the store was created
+	require.NoError(t, err)
 	assert.NotNil(t, store)
-	statsInterface, err := store.Stats(nil)
+	defer store.Close()
+
+	// Verify the store was created properly
+	statsInterface, err := store.Stats(context.Background())
 	require.NoError(t, err)
 	assert.NotNil(t, statsInterface)
-
-	store.Close()
 }
 
 func TestCreateRedisStoreWithoutURL(t *testing.T) {

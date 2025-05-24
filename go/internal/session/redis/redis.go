@@ -186,37 +186,47 @@ func (s *Store) Get(ctx context.Context, key string, data interface{}) error {
 
 // Update updates existing session data
 func (s *Store) Update(ctx context.Context, key string, data interface{}) error {
-	// Check if session exists
-	fullKey := s.keyPrefix + key
-	exists, err := s.client.Exists(ctx, fullKey).Result()
-	if err != nil {
-		return fmt.Errorf("failed to check session existence: %w", err)
-	}
-	if exists == 0 {
-		return fmt.Errorf("session not found")
-	}
-
-	// Get current TTL
-	ttl, err := s.client.TTL(ctx, fullKey).Result()
-	if err != nil {
-		return fmt.Errorf("failed to get session TTL: %w", err)
-	}
-
 	// Serialize new data
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session data: %w", err)
 	}
 
-	// Update with same TTL
-	if ttl > 0 {
-		err = s.client.Set(ctx, fullKey, jsonData, ttl).Err()
-	} else {
-		err = s.client.Set(ctx, fullKey, jsonData, 0).Err()
+	fullKey := s.keyPrefix + key
+
+	// Use Lua script for atomic update operation
+	script := `
+		local key = KEYS[1]
+		local data = ARGV[1]
+		
+		-- Check if key exists
+		if redis.call('EXISTS', key) == 0 then
+			return {err = 'session not found'}
+		end
+		
+		-- Get current TTL
+		local ttl = redis.call('TTL', key)
+		
+		-- Update with same TTL
+		if ttl > 0 then
+			redis.call('SET', key, data, 'EX', ttl)
+		else
+			redis.call('SET', key, data)
+		end
+		
+		return {ok = 'updated'}
+	`
+
+	result, err := s.client.Eval(ctx, script, []string{fullKey}, string(jsonData)).Result()
+	if err != nil {
+		return fmt.Errorf("failed to execute update script: %w", err)
 	}
 
-	if err != nil {
-		return fmt.Errorf("failed to update session in Redis: %w", err)
+	// Check result
+	if resultMap, ok := result.(map[interface{}]interface{}); ok {
+		if errMsg, exists := resultMap["err"]; exists {
+			return fmt.Errorf("%v", errMsg)
+		}
 	}
 
 	s.logger.Debug("Session updated", zap.String("key", key))
@@ -315,11 +325,15 @@ func (s *Store) Stats(ctx context.Context) (interface{}, error) {
 		}
 	}
 
-	// Count sessions with our prefix
+	// Count sessions with our prefix using SCAN (non-blocking)
 	pattern := s.keyPrefix + "*"
-	keys, err := s.client.Keys(ctx, pattern).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to count sessions: %w", err)
+	var keys []string
+	iter := s.client.Scan(ctx, 0, pattern, 0).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to scan sessions: %w", err)
 	}
 
 	return &Stats{

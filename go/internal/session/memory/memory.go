@@ -86,22 +86,33 @@ func (s *Store) startCleanup(interval time.Duration) {
 
 // cleanup removes expired sessions
 func (s *Store) cleanup() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	now := time.Now()
-	expired := 0
+	var expiredKeys []string
 
+	// First pass: identify expired sessions with read lock
+	s.mu.RLock()
 	for key, session := range s.sessions {
 		if session.ExpiresAt != nil && now.After(*session.ExpiresAt) {
-			delete(s.sessions, key)
-			expired++
-			s.stats.totalDeleted++
+			expiredKeys = append(expiredKeys, key)
 		}
 	}
+	s.mu.RUnlock()
 
-	if expired > 0 {
-		s.logger.Debug("Cleaned up expired sessions", zap.Int("count", expired))
+	// Second pass: delete expired sessions with write lock (if any found)
+	if len(expiredKeys) > 0 {
+		s.mu.Lock()
+		for _, key := range expiredKeys {
+			// Double-check expiration in case session was updated
+			if session, exists := s.sessions[key]; exists {
+				if session.ExpiresAt != nil && now.After(*session.ExpiresAt) {
+					delete(s.sessions, key)
+					s.stats.totalDeleted++
+				}
+			}
+		}
+		s.mu.Unlock()
+
+		s.logger.Debug("Cleaned up expired sessions", zap.Int("count", len(expiredKeys)))
 	}
 }
 

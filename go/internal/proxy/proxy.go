@@ -133,6 +133,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	var lastErr error
 
+	// For requests with body, ensure we can replay it
+	if r.Body != nil && r.GetBody == nil {
+		// For methods that typically have bodies, we need to be careful
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			p.logger.Warn("Request body cannot be replayed for retries",
+				zap.String("method", r.Method),
+				zap.String("url", r.URL.String()),
+			)
+			// Set MaxAttempts to 1 to disable retry for non-replayable bodies
+			p.retryConfig.MaxAttempts = 1
+		}
+	}
+
 	for attempt := 1; attempt <= p.retryConfig.MaxAttempts; attempt++ {
 		if attempt > 1 {
 			// Wait before retry
@@ -140,6 +153,15 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 			case <-time.After(p.retryConfig.Backoff):
 			case <-ctx.Done():
 				return ctx.Err()
+			}
+
+			// Reset request body if possible
+			if r.GetBody != nil {
+				newBody, err := r.GetBody()
+				if err != nil {
+					return fmt.Errorf("failed to reset request body: %w", err)
+				}
+				r.Body = newBody
 			}
 
 			p.logger.Debug("Retrying proxy request",

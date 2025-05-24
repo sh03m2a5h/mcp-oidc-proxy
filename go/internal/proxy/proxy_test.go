@@ -3,10 +3,13 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,52 +90,227 @@ func TestNew(t *testing.T) {
 func TestProxy_ServeHTTP(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
-	// Create a test backend server
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Backend-Header", "test")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("backend response"))
-	}))
-	defer backend.Close()
-
-	config := &Config{
-		TargetHost:   "127.0.0.1",
-		TargetPort:   8080, // Will be overridden
-		TargetScheme: "http",
-		Retry: RetryConfig{
-			MaxAttempts: 1,
-			Backoff:     10 * time.Millisecond,
+	tests := []struct {
+		name             string
+		setupBackend     func() *httptest.Server
+		setupRequest     func() *http.Request
+		expectedStatus   int
+		expectedBody     string
+		verifyHeaders    func(t *testing.T, w *httptest.ResponseRecorder, backendReq *http.Request)
+	}{
+		{
+			name: "Successful proxy with custom headers",
+			setupBackend: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Verify custom headers were added
+					assert.NotEmpty(t, r.Header.Get("X-Forwarded-Proto"))
+					assert.NotEmpty(t, r.Header.Get("X-Forwarded-Host"))
+					
+					// Verify hop-by-hop headers were removed
+					assert.Empty(t, r.Header.Get("Connection"))
+					assert.Empty(t, r.Header.Get("Keep-Alive"))
+					
+					w.Header().Set("X-Backend-Header", "test")
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte("backend response"))
+				}))
+			},
+			setupRequest: func() *http.Request {
+				req := httptest.NewRequest(http.MethodGet, "/test", nil)
+				req.Header.Set("X-Test-Header", "test-value")
+				req.Header.Set("Connection", "keep-alive") // Should be removed
+				req.Header.Set("Keep-Alive", "timeout=5")  // Should be removed
+				return req
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "backend response",
+			verifyHeaders: func(t *testing.T, w *httptest.ResponseRecorder, backendReq *http.Request) {
+				assert.Equal(t, "test", w.Header().Get("X-Backend-Header"))
+			},
 		},
-		CircuitBreaker: CircuitBreakerConfig{
-			Threshold: 3,
-			Timeout:   1 * time.Second,
+		{
+			name: "Backend error triggers error handler",
+			setupBackend: func() *httptest.Server {
+				// Create a backend that immediately closes connections
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Close connection to trigger error
+					hj, ok := w.(http.Hijacker)
+					if ok {
+						conn, _, _ := hj.Hijack()
+						conn.Close()
+					}
+				}))
+			},
+			setupRequest: func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/test", nil)
+			},
+			expectedStatus: http.StatusBadGateway,
+			expectedBody:   "Bad Gateway",
+			verifyHeaders: func(t *testing.T, w *httptest.ResponseRecorder, backendReq *http.Request) {
+				// No additional verification needed
+			},
 		},
 	}
 
-	proxy, err := New(config, logger)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := tt.setupBackend()
+			defer backend.Close()
 
-	// Override target to point to test server
-	backendURL, err := url.Parse(backend.URL)
-	require.NoError(t, err)
-	proxy.target = backendURL
-	
-	// Create new reverse proxy with correct target
-	proxy.reverseProxy = httputil.NewSingleHostReverseProxy(backendURL)
+			// Parse backend URL
+			backendURL, err := url.Parse(backend.URL)
+			require.NoError(t, err)
+			
+			// Update config to use test backend
+			config := &Config{
+				TargetHost:   backendURL.Hostname(),
+				TargetPort:   func() int { 
+					port, _ := strconv.Atoi(backendURL.Port())
+					return port
+				}(),
+				TargetScheme: backendURL.Scheme,
+				Retry: RetryConfig{
+					MaxAttempts: 1,
+					Backoff:     10 * time.Millisecond,
+				},
+				CircuitBreaker: CircuitBreakerConfig{
+					Threshold: 3,
+					Timeout:   1 * time.Second,
+				},
+			}
 
-	// Create test request
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-Test-Header", "test-value")
+			// Create proxy with proper configuration
+			proxy, err := New(config, logger)
+			require.NoError(t, err)
 
-	recorder := httptest.NewRecorder()
+			// Create test request
+			req := tt.setupRequest()
+			recorder := httptest.NewRecorder()
 
-	// Execute proxy request
-	proxy.ServeHTTP(recorder, req)
+			// Execute proxy request
+			proxy.ServeHTTP(recorder, req)
 
-	// Verify response
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Equal(t, "backend response", recorder.Body.String())
-	assert.Equal(t, "test", recorder.Header().Get("X-Backend-Header"))
+			// Verify response
+			assert.Equal(t, tt.expectedStatus, recorder.Code)
+			assert.Equal(t, tt.expectedBody, recorder.Body.String())
+			
+			// Run additional verifications
+			tt.verifyHeaders(t, recorder, req)
+		})
+	}
+}
+
+func TestProxy_RequestBodyReplay(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	tests := []struct {
+		name           string
+		method         string
+		body           string
+		hasGetBody     bool
+		backendFails   int // Number of times backend should fail before success
+		expectedCalls  int
+		expectedStatus int
+	}{
+		{
+			name:           "POST with replayable body",
+			method:         http.MethodPost,
+			body:           `{"test": "data"}`,
+			hasGetBody:     true,
+			backendFails:   1,
+			expectedCalls:  2, // Should retry once
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "POST without replayable body",
+			method:         http.MethodPost,
+			body:           `{"test": "data"}`,
+			hasGetBody:     false,
+			backendFails:   1,
+			expectedCalls:  1, // Should NOT retry
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "GET request always retries",
+			method:         http.MethodGet,
+			body:           "",
+			hasGetBody:     false,
+			backendFails:   1,
+			expectedCalls:  2, // Should retry
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callCount := 0
+			
+			// Create test backend
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				callCount++
+				
+				// Fail for the first N attempts
+				if callCount <= tt.backendFails {
+					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte("temporary error"))
+					return
+				}
+				
+				// Success after failures
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("success"))
+			}))
+			defer backend.Close()
+
+			// Parse backend URL
+			backendURL, err := url.Parse(backend.URL)
+			require.NoError(t, err)
+			
+			config := &Config{
+				TargetHost:   backendURL.Hostname(),
+				TargetPort:   func() int { 
+					port, _ := strconv.Atoi(backendURL.Port())
+					return port
+				}(),
+				TargetScheme: backendURL.Scheme,
+				Retry: RetryConfig{
+					MaxAttempts: 3,
+					Backoff:     10 * time.Millisecond,
+				},
+				CircuitBreaker: CircuitBreakerConfig{
+					Threshold: 10,
+					Timeout:   1 * time.Second,
+				},
+			}
+
+			proxy, err := New(config, logger)
+			require.NoError(t, err)
+
+			// Create test request
+			var req *http.Request
+			if tt.body != "" {
+				req = httptest.NewRequest(tt.method, "/test", strings.NewReader(tt.body))
+				
+				// Simulate replayable body if needed
+				if tt.hasGetBody {
+					req.GetBody = func() (io.ReadCloser, error) {
+						return io.NopCloser(strings.NewReader(tt.body)), nil
+					}
+				}
+			} else {
+				req = httptest.NewRequest(tt.method, "/test", nil)
+			}
+			
+			recorder := httptest.NewRecorder()
+
+			// Execute proxy request
+			proxy.ServeHTTP(recorder, req)
+
+			// Verify results
+			assert.Equal(t, tt.expectedCalls, callCount, "unexpected number of backend calls")
+			assert.Equal(t, tt.expectedStatus, recorder.Code, "unexpected status code")
+		})
+	}
 }
 
 func TestProxy_Health(t *testing.T) {

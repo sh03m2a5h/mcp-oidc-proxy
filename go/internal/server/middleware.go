@@ -44,10 +44,16 @@ func LoggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
 			path = path + "?" + raw
 		}
 		
-		requestID, _ := c.Get("request_id")
+		requestID, exists := c.Get("request_id")
+		requestIDStr := ""
+		if exists {
+			if id, ok := requestID.(string); ok {
+				requestIDStr = id
+			}
+		}
 		
 		logger.Info("HTTP request",
-			zap.String("request_id", requestID.(string)),
+			zap.String("request_id", requestIDStr),
 			zap.String("method", method),
 			zap.String("path", path),
 			zap.Int("status", statusCode),

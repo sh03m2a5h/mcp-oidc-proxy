@@ -58,7 +58,9 @@ func AuthMiddleware(sessionStore session.Store, logger *zap.Logger, excludePaths
 			)
 			
 			// Delete expired session
-			_ = sessionStore.Delete(c.Request.Context(), sessionID)
+			if err := sessionStore.Delete(c.Request.Context(), sessionID); err != nil {
+				logger.Warn("Failed to delete expired session", zap.Error(err), zap.String("session_id", sessionID))
+			}
 			
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Session expired",
@@ -114,7 +116,9 @@ func OptionalAuthMiddleware(sessionStore session.Store, logger *zap.Logger) gin.
 		// Check if token is expired
 		if time.Now().After(userSession.ExpiresAt) {
 			// Session expired, delete it but continue
-			_ = sessionStore.Delete(c.Request.Context(), sessionID)
+			if err := sessionStore.Delete(c.Request.Context(), sessionID); err != nil {
+				logger.Warn("Failed to delete expired session", zap.Error(err), zap.String("session_id", sessionID))
+			}
 			c.Next()
 			return
 		}

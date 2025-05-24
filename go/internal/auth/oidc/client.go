@@ -132,10 +132,10 @@ func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*TokenR
 	}
 
 	// Extract ID token if present
-	rawIDToken, _ := token.Extra("id_token").(string)
+	rawIDToken, hasIDToken := token.Extra("id_token").(string)
 	
 	var claims map[string]interface{}
-	if rawIDToken != "" {
+	if hasIDToken && rawIDToken != "" {
 		// Verify ID token
 		idToken, err := c.verifier.Verify(ctx, rawIDToken)
 		if err != nil {
@@ -146,6 +146,10 @@ func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*TokenR
 		if err := idToken.Claims(&claims); err != nil {
 			return nil, fmt.Errorf("failed to extract claims: %w", err)
 		}
+	} else {
+		// If no ID token is provided in refresh response, we don't have updated claims
+		// This is acceptable for refresh tokens as ID tokens are not always provided
+		claims = make(map[string]interface{})
 	}
 
 	return &TokenResponse{

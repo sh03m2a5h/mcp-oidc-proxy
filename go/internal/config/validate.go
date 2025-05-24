@@ -166,9 +166,9 @@ func validateOIDCConfig(config *OIDCConfig) error {
 		return fmt.Errorf("invalid redirect URL: %w", err)
 	}
 
-	if config.PostLogoutRedirectURL != "" {
-		if _, err := url.Parse(config.PostLogoutRedirectURL); err != nil {
-			return fmt.Errorf("invalid post logout redirect URL: %w", err)
+	if config.PostLogoutRedirectURI != "" {
+		if _, err := url.Parse(config.PostLogoutRedirectURI); err != nil {
+			return fmt.Errorf("invalid post logout redirect URI: %w", err)
 		}
 	}
 

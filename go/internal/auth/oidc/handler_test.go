@@ -246,6 +246,8 @@ func TestCallback(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "Invalid or expired state",
 		},
+		// Note: Successful callback test would require mocking the OIDC client
+		// which is complex due to token exchange. This is covered in integration tests.
 	}
 
 	for _, tt := range tests {

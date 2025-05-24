@@ -147,7 +147,9 @@ func (h *Handler) Callback(c *gin.Context) {
 	}
 
 	// Delete auth session (one-time use)
-	_ = h.sessionStore.Delete(c.Request.Context(), sessionKey)
+	if err := h.sessionStore.Delete(c.Request.Context(), sessionKey); err != nil {
+		h.logger.Warn("Failed to delete auth session", zap.Error(err), zap.String("key", sessionKey))
+	}
 
 	// Validate state
 	if authSession.State != state {
@@ -156,7 +158,7 @@ func (h *Handler) Callback(c *gin.Context) {
 			zap.String("received", state),
 		)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid state",
+			"error": "Invalid or expired state",
 		})
 		return
 	}
@@ -246,7 +248,7 @@ func (h *Handler) Logout(c *gin.Context) {
 	if err == nil && sessionID != "" {
 		// Delete session from store
 		if err := h.sessionStore.Delete(c.Request.Context(), sessionID); err != nil {
-			h.logger.Warn("Failed to delete session", zap.Error(err))
+			h.logger.Warn("Failed to delete session", zap.Error(err), zap.String("session_id", sessionID))
 		}
 	}
 

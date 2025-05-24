@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -117,7 +118,7 @@ func TestProxy_ServeHTTP(t *testing.T) {
 	proxy.target = backendURL
 	
 	// Create new reverse proxy with correct target
-	proxy.httputil = httputil.NewSingleHostReverseProxy(backendURL)
+	proxy.reverseProxy = httputil.NewSingleHostReverseProxy(backendURL)
 
 	// Create test request
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -192,6 +193,120 @@ func TestProxy_Health(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestProxy_RetryBehavior(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	tests := []struct {
+		name           string
+		attempts       int
+		responses      []int // Status codes for each attempt
+		expectedCalls  int
+		expectedStatus int
+		expectError    bool
+	}{
+		{
+			name:           "Success on first attempt",
+			attempts:       3,
+			responses:      []int{200},
+			expectedCalls:  1,
+			expectedStatus: 200,
+			expectError:    false,
+		},
+		{
+			name:           "Success after retry",
+			attempts:       3,
+			responses:      []int{500, 200},
+			expectedCalls:  2,
+			expectedStatus: 200,
+			expectError:    false,
+		},
+		{
+			name:           "All attempts fail",
+			attempts:       3,
+			responses:      []int{500, 500, 500},
+			expectedCalls:  3,
+			expectedStatus: 500,
+			expectError:    true,
+		},
+		{
+			name:           "Success on last attempt",
+			attempts:       3,
+			responses:      []int{500, 503, 200},
+			expectedCalls:  3,
+			expectedStatus: 200,
+			expectError:    false,
+		},
+		{
+			name:           "4xx errors not retried",
+			attempts:       3,
+			responses:      []int{404},
+			expectedCalls:  1,
+			expectedStatus: 404,
+			expectError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callCount := 0
+			
+			// Create test backend that returns different status codes
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if callCount < len(tt.responses) {
+					w.WriteHeader(tt.responses[callCount])
+					w.Write([]byte(fmt.Sprintf("response %d", callCount)))
+					callCount++
+				} else {
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte("unexpected call"))
+				}
+			}))
+			defer backend.Close()
+
+			config := &Config{
+				TargetHost:   "127.0.0.1",
+				TargetPort:   8080,
+				TargetScheme: "http",
+				Retry: RetryConfig{
+					MaxAttempts: tt.attempts,
+					Backoff:     10 * time.Millisecond,
+				},
+				CircuitBreaker: CircuitBreakerConfig{
+					Threshold: 10,
+					Timeout:   1 * time.Second,
+				},
+			}
+
+			proxy, err := New(config, logger)
+			require.NoError(t, err)
+
+			// Override target
+			backendURL, err := url.Parse(backend.URL)
+			require.NoError(t, err)
+			proxy.target = backendURL
+			proxy.reverseProxy = httputil.NewSingleHostReverseProxy(backendURL)
+
+			// Create test request
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			recorder := httptest.NewRecorder()
+
+			// Execute proxy request
+			proxy.ServeHTTP(recorder, req)
+
+			// Verify results
+			assert.Equal(t, tt.expectedCalls, callCount, "unexpected number of backend calls")
+			assert.Equal(t, tt.expectedStatus, recorder.Code, "unexpected status code")
+			
+			// Verify error recording for circuit breaker
+			if tt.expectError {
+				assert.Equal(t, 1, proxy.circuitBreaker.Failures())
+			} else {
+				assert.Equal(t, 0, proxy.circuitBreaker.Failures())
 			}
 		})
 	}

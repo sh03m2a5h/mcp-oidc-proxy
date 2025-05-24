@@ -15,6 +15,7 @@ import (
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/proxy"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/session"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/server"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/pkg/version"
 	"go.uber.org/zap"
 )
 
@@ -99,15 +100,15 @@ func (a *App) setupRoutes() {
 	router.GET("/callback", a.oidcHandler.Callback)
 	router.POST("/logout", a.oidcHandler.Logout)
 
-	// Session management routes
-	router.GET("/session", a.sessionHandler)
-
 	// Apply authentication middleware to all other routes
 	authMiddleware := oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback"})
 	
 	// Protected routes group
 	protected := router.Group("/")
 	protected.Use(authMiddleware)
+	
+	// Session management route (protected)
+	protected.GET("/session", a.sessionHandler)
 	
 	// Proxy all other requests to the target
 	protected.Any("/*path", gin.WrapH(a.proxy))
@@ -190,7 +191,7 @@ func (a *App) healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "healthy",
 		"timestamp": time.Now().UTC(),
-		"version": "1.0.0",
+		"version": version.Version,
 	})
 }
 

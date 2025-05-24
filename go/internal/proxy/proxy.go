@@ -15,7 +15,7 @@ import (
 // Proxy handles reverse proxy operations
 type Proxy struct {
 	target         *url.URL
-	httputil       *httputil.ReverseProxy
+	reverseProxy   *httputil.ReverseProxy
 	circuitBreaker *CircuitBreaker
 	retryConfig    RetryConfig
 	logger         *zap.Logger
@@ -96,7 +96,7 @@ func New(config *Config, logger *zap.Logger) (*Proxy, error) {
 
 	return &Proxy{
 		target:         targetURL,
-		httputil:       reverseProxy,
+		reverseProxy:   reverseProxy,
 		circuitBreaker: circuitBreaker,
 		retryConfig:    config.Retry,
 		logger:         logger,
@@ -149,30 +149,29 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 			)
 		}
 
-		// Create response recorder for retry attempts (except last)
-		var recorder *ResponseRecorder
-		var writer http.ResponseWriter = w
-
-		if attempt < p.retryConfig.MaxAttempts {
-			recorder = NewResponseRecorder()
-			writer = recorder
-		}
+		// Always use response recorder to capture status
+		recorder := NewResponseRecorder()
 
 		// Execute request
-		p.httputil.ServeHTTP(writer, r)
+		p.reverseProxy.ServeHTTP(recorder, r)
 
 		// Check if retry is needed
-		if recorder != nil {
-			if recorder.StatusCode >= 500 && recorder.StatusCode < 600 {
-				lastErr = fmt.Errorf("server error: %d", recorder.StatusCode)
+		if recorder.StatusCode >= 500 && recorder.StatusCode < 600 {
+			lastErr = fmt.Errorf("server error: %d", recorder.StatusCode)
+			
+			// If this is not the last attempt, continue to retry
+			if attempt < p.retryConfig.MaxAttempts {
 				continue
 			}
-			// Success - write to actual response
+			
+			// Last attempt with 5xx error - still write the response
+			// but return error for circuit breaker
 			recorder.WriteTo(w)
-			return nil
+			return lastErr
 		}
 
-		// Last attempt or direct write - assume success
+		// Success - write to actual response
+		recorder.WriteTo(w)
 		return nil
 	}
 

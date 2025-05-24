@@ -1,0 +1,113 @@
+# MCP OIDC Proxy Configuration Example
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+  
+  # Timeout settings
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "120s"
+
+# Proxy configuration
+proxy:
+  target_host: "localhost"
+  target_port: 3000
+  target_scheme: "http"
+  
+  # Retry settings
+  retry:
+    max_attempts: 3
+    backoff: "100ms"
+  
+  # Circuit breaker
+  circuit_breaker:
+    threshold: 5
+    timeout: "60s"
+
+# OIDC configuration
+oidc:
+  # Provider settings
+  discovery_url: "https://your-domain.auth0.com/.well-known/openid-configuration"
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+  
+  # Scopes and options
+  scopes: ["openid", "email", "profile"]
+  use_pkce: true
+  
+  # URL customization
+  redirect_url: "http://localhost:8080/callback"
+  post_logout_redirect_url: "http://localhost:8080/"
+
+# Session configuration
+session:
+  # Store type: memory | redis
+  store: "memory"
+  
+  # Session options
+  ttl: "24h"
+  cookie_name: "mcp_session"
+  cookie_domain: ""
+  cookie_path: "/"
+  cookie_secure: false  # Set to true in production (HTTPS) environments
+  cookie_http_only: true
+  cookie_same_site: "lax"
+  
+  # Redis configuration (when store: redis)
+  redis:
+    url: "redis://localhost:6379"
+    password: ""
+    db: 0
+    key_prefix: "mcp:session:"
+
+# Authentication configuration
+auth:
+  # Mode: oidc | bypass
+  mode: "oidc"
+  
+  # Header configuration
+  headers:
+    user_id: "X-User-ID"
+    user_email: "X-User-Email"
+    user_name: "X-User-Name"
+    user_groups: "X-User-Groups"
+  
+  # Access control
+  access_control:
+    # Public paths (no auth required)
+    public_paths:
+      - "/health"
+      - "/metrics"
+    
+    # Group-based access control
+    required_groups: []
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json" # json, text
+  output: "stdout" # stdout, stderr, file
+  file:
+    path: "/var/log/mcp-proxy.log"
+    max_size: "100MB"
+    max_age: "7d"
+    max_backups: 5
+
+# Metrics configuration
+metrics:
+  enabled: true
+  path: "/metrics"
+  
+# Tracing configuration
+tracing:
+  enabled: false
+  provider: "jaeger" # jaeger, zipkin
+  endpoint: "http://localhost:14268/api/traces"
+  service_name: "mcp-oidc-proxy"
+  sample_rate: 0.1

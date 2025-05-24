@@ -58,6 +58,16 @@ func (m *MockSessionStore) Close() error {
 	return args.Error(0)
 }
 
+func (m *MockSessionStore) Cleanup(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *MockSessionStore) Stats(ctx context.Context) (interface{}, error) {
+	args := m.Called(ctx)
+	return args.Get(0), args.Error(1)
+}
+
 func TestNewHandler(t *testing.T) {
 	logger := zap.NewNop()
 	mockStore := new(MockSessionStore)

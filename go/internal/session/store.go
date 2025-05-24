@@ -30,4 +30,19 @@ type Store interface {
 
 	// Close closes the store connection
 	Close() error
+
+	// Cleanup removes expired sessions (optional)
+	Cleanup(ctx context.Context) error
+
+	// Stats returns session store statistics (optional)
+	Stats(ctx context.Context) (interface{}, error)
+}
+
+// Stats holds session store statistics
+type Stats struct {
+	ActiveSessions int64  `json:"active_sessions"`
+	TotalCreated   int64  `json:"total_created"`
+	TotalDeleted   int64  `json:"total_deleted"`
+	Store          string `json:"store"`
+	Info           string `json:"info,omitempty"`
 }

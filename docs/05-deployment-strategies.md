@@ -8,7 +8,7 @@
 
 ```bash
 # ダウンロードと実行
-wget https://github.com/yourusername/mcp-oidc-proxy-go/releases/download/v1.0.0/mcp-oidc-proxy-linux-amd64
+wget https://github.com/sh03m2a5h/mcp-oidc-proxy-go/releases/download/v1.0.0/mcp-oidc-proxy-linux-amd64
 chmod +x mcp-oidc-proxy-linux-amd64
 ./mcp-oidc-proxy-linux-amd64 --config config.yaml
 ```

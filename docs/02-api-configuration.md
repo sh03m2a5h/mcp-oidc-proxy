@@ -36,6 +36,11 @@
 }
 ```
 
+**backend_status の可能な値:**
+- `"reachable"`: バックエンドMCPサーバーに接続可能
+- `"unreachable"`: バックエンドMCPサーバーに接続不可
+- `"unknown"`: バックエンドの状態が不明（初期化中など）
+
 #### GET /metrics
 - **説明**: Prometheusメトリクス
 - **形式**: Prometheus text format
@@ -133,7 +138,7 @@ session:
   cookie_name: "mcp_session"
   cookie_domain: ""
   cookie_path: "/"
-  cookie_secure: false
+  cookie_secure: false  # 本番環境（HTTPS）では true に設定してください
   cookie_http_only: true
   cookie_same_site: "lax"
   

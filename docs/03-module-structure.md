@@ -67,7 +67,7 @@ mcp-oidc-proxy-go/
 ### go.mod
 
 ```go
-module github.com/yourusername/mcp-oidc-proxy-go
+module github.com/sh03m2a5h/mcp-oidc-proxy-go
 
 go 1.22
 
@@ -283,7 +283,7 @@ func (e *AppError) Error() string {
 .PHONY: all build test clean
 
 VERSION ?= $(shell git describe --tags --always --dirty)
-LDFLAGS := -X github.com/yourusername/mcp-oidc-proxy-go/pkg/version.Version=$(VERSION)
+LDFLAGS := -X github.com/sh03m2a5h/mcp-oidc-proxy-go/pkg/version.Version=$(VERSION)
 
 all: test build
 
@@ -310,6 +310,18 @@ build-all:
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/mcp-oidc-proxy-linux-amd64 ./cmd/mcp-oidc-proxy
 	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/mcp-oidc-proxy-darwin-amd64 ./cmd/mcp-oidc-proxy
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/mcp-oidc-proxy-windows-amd64.exe ./cmd/mcp-oidc-proxy
+```
+
+## Lambda用の追加依存関係（オプション）
+
+AWS Lambdaでのデプロイメントをサポートする場合、以下の依存関係も追加：
+
+```go
+require (
+    // AWS Lambda
+    github.com/aws/aws-lambda-go v1.41.0
+    github.com/awslabs/aws-lambda-go-api-proxy v0.16.0
+)
 ```
 
 ## 次のドキュメント

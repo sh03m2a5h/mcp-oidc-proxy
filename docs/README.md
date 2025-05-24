@@ -71,7 +71,7 @@
 
 ```bash
 # バイナリをダウンロード
-wget https://github.com/yourusername/mcp-oidc-proxy-go/releases/download/v1.0.0/mcp-oidc-proxy
+wget https://github.com/sh03m2a5h/mcp-oidc-proxy-go/releases/download/v1.0.0/mcp-oidc-proxy
 
 # 実行権限を付与
 chmod +x mcp-oidc-proxy

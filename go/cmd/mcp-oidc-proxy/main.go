@@ -1,11 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/server"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/pkg/version"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -25,11 +32,10 @@ var rootCmd = &cobra.Command{
 It supports multiple OIDC providers including Auth0, Google, Microsoft, and GitHub.`,
 	Version: version.Version,
 	Run: func(cmd *cobra.Command, args []string) {
-		// TODO: Implement server startup
-		fmt.Println("Starting MCP OIDC Proxy...")
-		fmt.Printf("Version: %s\n", version.Version)
-		fmt.Printf("Config: %s\n", configFile)
-		fmt.Printf("Listen: %s:%d\n", host, port)
+		if err := runServer(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
@@ -48,6 +54,71 @@ func init() {
 
 	// Auth flags
 	rootCmd.Flags().StringVar(&authMode, "auth-mode", "oidc", "authentication mode (oidc, bypass)")
+}
+
+func runServer() error {
+	// Setup logger
+	logger, err := setupLogger(logLevel)
+	if err != nil {
+		return fmt.Errorf("failed to setup logger: %w", err)
+	}
+	defer logger.Sync()
+
+	// Create server config
+	serverConfig := &server.Config{
+		Host:         host,
+		Port:         port,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	// Create and start server
+	srv := server.New(serverConfig, logger)
+	
+	// Setup graceful shutdown
+	errChan := make(chan error, 1)
+	go func() {
+		if err := srv.Run(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// Wait for interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("server error: %w", err)
+	case sig := <-sigChan:
+		logger.Info("Received signal", zap.String("signal", sig.String()))
+		
+		// Graceful shutdown with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		
+		if err := srv.Shutdown(ctx); err != nil {
+			return fmt.Errorf("failed to shutdown server: %w", err)
+		}
+		
+		logger.Info("Server shutdown complete")
+		return nil
+	}
+}
+
+func setupLogger(level string) (*zap.Logger, error) {
+	var zapLevel zapcore.Level
+	if err := zapLevel.UnmarshalText([]byte(level)); err != nil {
+		return nil, fmt.Errorf("invalid log level: %w", err)
+	}
+
+	config := zap.NewProductionConfig()
+	config.Level = zap.NewAtomicLevelAt(zapLevel)
+	config.EncoderConfig.TimeKey = "timestamp"
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	return config.Build()
 }
 
 func main() {

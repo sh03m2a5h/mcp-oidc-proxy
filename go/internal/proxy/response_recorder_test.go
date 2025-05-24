@@ -35,9 +35,10 @@ func TestResponseRecorder_Write(t *testing.T) {
 	recorder := NewResponseRecorder()
 	
 	// Write without WriteHeader should default to 200
-	n, err := recorder.Write([]byte("test content"))
+	testContent := []byte("test content")
+	n, err := recorder.Write(testContent)
 	assert.NoError(t, err)
-	assert.Equal(t, 12, n)
+	assert.Equal(t, len(testContent), n)
 	assert.Equal(t, http.StatusOK, recorder.StatusCode)
 	assert.True(t, recorder.written)
 	assert.Equal(t, "test content", recorder.Body.String())

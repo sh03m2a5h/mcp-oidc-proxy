@@ -17,6 +17,8 @@ type Store struct {
 	logger       *zap.Logger
 	cleanupDone  chan struct{}
 	cleanupTimer *time.Timer
+	// timerMu is a separate mutex for timer operations to avoid potential
+	// deadlocks between cleanup goroutine and Close() method
 	timerMu      sync.Mutex
 	stats        sessionStats
 }

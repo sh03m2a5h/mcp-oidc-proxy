@@ -17,6 +17,7 @@ type Store struct {
 	logger       *zap.Logger
 	cleanupDone  chan struct{}
 	cleanupTimer *time.Timer
+	timerMu      sync.Mutex
 	stats        sessionStats
 }
 
@@ -78,6 +79,8 @@ func NewStore(config *Config, logger *zap.Logger) *Store {
 
 // startCleanup starts the background cleanup routine
 func (s *Store) startCleanup(interval time.Duration) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
 	s.cleanupTimer = time.AfterFunc(interval, func() {
 		s.cleanup()
 		s.startCleanup(interval) // Reschedule
@@ -289,9 +292,11 @@ func (s *Store) Refresh(ctx context.Context, key string, ttl time.Duration) erro
 
 // Close closes the store and stops cleanup routine
 func (s *Store) Close() error {
+	s.timerMu.Lock()
 	if s.cleanupTimer != nil {
 		s.cleanupTimer.Stop()
 	}
+	s.timerMu.Unlock()
 	close(s.cleanupDone)
 
 	s.mu.Lock()

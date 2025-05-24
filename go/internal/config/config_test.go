@@ -377,3 +377,4 @@ func clearEnvVars() {
 		os.Unsetenv(env)
 	}
 }
+

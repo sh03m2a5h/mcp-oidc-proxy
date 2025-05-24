@@ -278,3 +278,4 @@ func validateTracingConfig(config *TracingConfig) error {
 
 	return nil
 }
+

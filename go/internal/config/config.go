@@ -313,3 +313,4 @@ func (c *ServerConfig) ToServerConfig() *server.Config {
 		IdleTimeout:  c.IdleTimeout,
 	}
 }
+

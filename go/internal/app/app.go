@@ -129,6 +129,9 @@ func (a *App) setupRoutes() {
 
 	// Health check endpoint (public)
 	router.GET("/health", a.healthHandler)
+	
+	// Version endpoint (public)
+	router.GET("/api/v1/version", a.versionHandler)
 
 	// Metrics endpoint (public)
 	if a.config.Metrics.Enabled {
@@ -140,7 +143,7 @@ func (a *App) setupRoutes() {
 	
 	if a.config.Auth.Mode == "bypass" {
 		// Bypass mode - no login/logout routes needed
-		authMiddleware = bypass.AuthMiddleware(a.logger)
+		authMiddleware = bypass.AuthMiddleware(a.logger, &a.config.Auth.Headers)
 	} else {
 		// OIDC mode - setup authentication routes
 		router.GET("/login", a.oidcHandler.Authorize)
@@ -277,6 +280,19 @@ func (a *App) sessionHandler(c *gin.Context) {
 		"user_email": userEmail,
 		"user_name":  userName,
 		"authenticated": userID != "",
+	})
+}
+
+// versionHandler handles version info requests
+func (a *App) versionHandler(c *gin.Context) {
+	buildInfo := version.GetBuildInfo()
+	
+	c.JSON(http.StatusOK, gin.H{
+		"version":    buildInfo.Version,
+		"git_commit": buildInfo.GitCommit,
+		"build_date": buildInfo.BuildDate,
+		"go_version": buildInfo.GoVersion,
+		"platform":   buildInfo.Platform,
 	})
 }
 

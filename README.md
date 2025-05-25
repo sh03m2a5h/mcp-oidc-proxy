@@ -36,7 +36,7 @@ Adds enterprise-grade authentication to any MCP server:
 - 🚀 **Single Binary**: No Docker, no dependencies - just download and run
 - 🛡️ **Modern Security**: OAuth 2.1 with PKCE, secure sessions, CSP headers
 - 📊 **Production Ready**: Prometheus metrics, health checks, OpenTelemetry tracing
-- 🔄 **Full Protocol Support**: HTTP, WebSocket, and MCP streaming
+- 🔄 **Full Protocol Support**: HTTP, SSE/WebSocket streaming, and MCP protocols
 - ⚡ **High Performance**: <10ms overhead, 1000+ concurrent connections
 
 ## 📦 Installation
@@ -172,6 +172,19 @@ The proxy is built with:
 
 See [docs/](docs/) for detailed architecture documentation.
 
+## 🔄 Recent Updates
+
+### v0.5.0 (Latest)
+- **SSE/WebSocket Streaming Support**: Fixed panic issues with streaming protocols
+- **Bypass Mode**: Added development/testing mode to bypass authentication
+- **Improved Stability**: Better error handling for long-lived connections
+- **AI-Assisted Development**: Code quality enhanced through Copilot and Gemini reviews
+
+### v0.4.0
+- **Monitoring & Observability**: Prometheus metrics and OpenTelemetry tracing
+- **Health Checks**: Built-in health endpoint with subsystem status
+- **Circuit Breaker**: Automatic backend failure protection
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -184,6 +197,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - Built for the [Model Context Protocol](https://modelcontextprotocol.io) ecosystem
 - Inspired by the need for simple, secure MCP server deployment
+- SSE/WebSocket streaming support developed for [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) compatibility
 
 ---
 

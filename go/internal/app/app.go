@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/auth/bypass"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/auth/oidc"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
@@ -66,10 +67,13 @@ func New(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to create session store: %w", err)
 	}
 
-	// Create OIDC handler
-	oidcHandler, err := oidc.NewHandler(ctx, &cfg.OIDC, &cfg.Session, sessionStore, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OIDC handler: %w", err)
+	// Create OIDC handler only if not in bypass mode
+	var oidcHandler *oidc.Handler
+	if cfg.Auth.Mode != "bypass" {
+		oidcHandler, err = oidc.NewHandler(ctx, &cfg.OIDC, &cfg.Session, sessionStore, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OIDC handler: %w", err)
+		}
 	}
 
 	// Create reverse proxy
@@ -125,29 +129,35 @@ func (a *App) setupRoutes() {
 
 	// Health check endpoint (public)
 	router.GET("/health", a.healthHandler)
+	
+	// Version endpoint (public)
+	router.GET("/api/v1/version", a.versionHandler)
 
 	// Metrics endpoint (public)
 	if a.config.Metrics.Enabled {
 		router.GET(a.config.Metrics.Path, gin.WrapH(promhttp.Handler()))
 	}
 
-	// OIDC authentication routes
-	router.GET("/login", a.oidcHandler.Authorize)
-	router.GET("/callback", a.oidcHandler.Callback)
-	router.POST("/logout", a.oidcHandler.Logout)
-
-	// Apply authentication middleware to all other routes
-	authMiddleware := oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback", a.config.Metrics.Path})
+	// Setup auth based on mode
+	var authMiddleware gin.HandlerFunc
 	
-	// Protected routes group
-	protected := router.Group("/")
-	protected.Use(authMiddleware)
+	if a.config.Auth.Mode == "bypass" {
+		// Bypass mode - no login/logout routes needed
+		authMiddleware = bypass.AuthMiddleware(a.logger, &a.config.Auth.Headers)
+	} else {
+		// OIDC mode - setup authentication routes
+		router.GET("/login", a.oidcHandler.Authorize)
+		router.GET("/callback", a.oidcHandler.Callback)
+		router.POST("/logout", a.oidcHandler.Logout)
+		
+		authMiddleware = oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback", a.config.Metrics.Path})
+	}
 	
-	// Session management route (protected)
-	protected.GET("/session", a.sessionHandler)
+	// Session management route (with auth)
+	router.GET("/session", authMiddleware, a.sessionHandler)
 	
-	// Proxy all other requests to the target
-	protected.Any("/*path", gin.WrapH(a.proxy))
+	// Proxy all other requests to the target (with auth)
+	router.NoRoute(authMiddleware, gin.WrapH(a.proxy))
 }
 
 // Run starts the application
@@ -270,6 +280,19 @@ func (a *App) sessionHandler(c *gin.Context) {
 		"user_email": userEmail,
 		"user_name":  userName,
 		"authenticated": userID != "",
+	})
+}
+
+// versionHandler handles version info requests
+func (a *App) versionHandler(c *gin.Context) {
+	buildInfo := version.GetBuildInfo()
+	
+	c.JSON(http.StatusOK, gin.H{
+		"version":    buildInfo.Version,
+		"git_commit": buildInfo.GitCommit,
+		"build_date": buildInfo.BuildDate,
+		"go_version": buildInfo.GoVersion,
+		"platform":   buildInfo.Platform,
 	})
 }
 

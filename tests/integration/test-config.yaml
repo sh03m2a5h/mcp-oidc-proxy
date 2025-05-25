@@ -1,0 +1,30 @@
+# Test configuration for MCP OIDC Proxy in bypass mode
+
+server:
+  host: "0.0.0.0"
+  port: 8090
+
+proxy:
+  target_host: "localhost"
+  target_port: 3000
+  target_scheme: "http"
+
+auth:
+  mode: "bypass"
+
+# Minimal OIDC config (required even in bypass mode)
+oidc:
+  discovery_url: "https://example.com/.well-known/openid-configuration"
+  client_id: "dummy"
+  client_secret: "dummy"
+
+session:
+  store: "memory"
+  ttl: "24h"
+  cookie_name: "mcp_session"
+  cookie_secure: false
+  cookie_http_only: true
+
+logging:
+  level: "debug"
+  format: "json"

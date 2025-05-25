@@ -3,98 +3,83 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
-This is a generic OAuth 2.1/OIDC authentication proxy for MCP (Model Context Protocol) servers. It provides authentication layer without running MCP servers itself, supporting multiple OIDC providers including Auth0, Google, Microsoft, and GitHub.
+MCP OIDC Proxy is a production-ready OAuth 2.1/OIDC authentication proxy for Model Context Protocol (MCP) servers. It's implemented as a single Go binary that provides authentication without requiring Docker or complex dependencies.
 
-## Build Commands
-- Start proxy: `./start-mcp.sh`
-- Stop proxy: `./stop-mcp.sh`
-- View logs: `docker logs mcp-proxy`
-- Health check: `curl http://localhost:8080/health`
-
-## Configuration Examples
-
-### Auth0 (Recommended)
-```bash
-# Modern OIDC configuration
-OIDC_DISCOVERY_URL="https://your-domain.auth0.com/.well-known/openid-configuration" \
-OIDC_CLIENT_ID="your-client-id" \
-OIDC_CLIENT_SECRET="your-secret" \
-AUTH_MODE=oidc ./start-mcp.sh
-
-# Legacy Auth0 configuration (still supported)
-AUTH0_DOMAIN=your-domain.auth0.com \
-AUTH0_CLIENT_ID=your-client-id \
-AUTH0_CLIENT_SECRET=your-secret \
-AUTH_MODE=oidc ./start-mcp.sh
+## Project Structure
+```
+mcp-oidc-proxy/
+├── go/                    # Main Go implementation
+│   ├── cmd/              # Application entry point
+│   ├── internal/         # Core application code
+│   │   ├── app/         # Application setup and routing
+│   │   ├── auth/        # Authentication (OIDC, bypass)
+│   │   ├── config/      # Configuration management
+│   │   ├── middleware/  # HTTP middleware (security, metrics, logging)
+│   │   ├── proxy/       # Reverse proxy with circuit breaker
+│   │   ├── server/      # HTTP server
+│   │   ├── session/     # Session management (memory/Redis)
+│   │   └── tracing/     # OpenTelemetry tracing
+│   └── pkg/             # Public packages
+├── legacy/              # Old Nginx/Lua implementation (archived)
+└── docs/               # Architecture documentation
 ```
 
-### Other Providers
+## Key Commands
 ```bash
-# Google
-OIDC_DISCOVERY_URL="https://accounts.google.com/.well-known/openid-configuration"
+# Development
+cd go && make build      # Build binary
+cd go && make test       # Run tests
+cd go && make run        # Run locally
 
-# Microsoft Azure AD
-OIDC_DISCOVERY_URL="https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration"
+# Production
+./mcp-oidc-proxy         # Run with environment variables
 ```
 
-### Target Configuration
-```bash
-# Set MCP target server
-MCP_TARGET_HOST=your-mcp-server.com MCP_TARGET_PORT=3000 docker compose up -d
-```
+## Configuration
+The proxy is configured via environment variables:
+- `OIDC_DISCOVERY_URL`: OIDC provider discovery endpoint
+- `OIDC_CLIENT_ID`: OAuth client ID
+- `OIDC_CLIENT_SECRET`: OAuth client secret
+- `PROXY_TARGET_HOST`: Target MCP server (default: localhost)
+- `PROXY_TARGET_PORT`: Target port (default: 3000)
+- `AUTH_MODE`: Authentication mode (oidc/bypass)
 
-### External Access
+## Typical Use Case
 ```bash
-# Cloudflare Tunnel
+# Local MCP server protected by OIDC, exposed via Cloudflare Tunnel
+./mcp-oidc-proxy &
 cloudflared tunnel --url http://localhost:8080
-
-# Ngrok
-ngrok http 8080
 ```
 
 ## Code Style Guidelines
-- Lua indentation: 4 spaces
-- Config file formatting: Follow existing style in nginx/conf.d/default.conf
-- Error handling: Log errors with appropriate log level (ngx.ERR, ngx.DEBUG)
-- Naming conventions: Use snake_case for variables and functions
-- Docker/Compose: Use version '3' format, with named containers and networks
-- Shell scripts: Include descriptive comments and echo status messages
-- Security: Never commit OAuth client credentials, always use environment variables
-- Character encoding: Use UTF-8 for all files
+- Go standard formatting (gofmt)
+- Meaningful variable names
+- Comprehensive error handling with zap logger
+- Test coverage target: 80%+
+- Use interfaces for testability
+- Security headers on all responses
 
-## Project Structure
-- nginx/conf.d/: NGINX configuration files
-- nginx/lua/oidc.lua: Generic OIDC authentication module
-- data/: Persistent storage (Redis data)
-- docker-compose.yml: Main proxy service configuration
-- start-mcp.sh/stop-mcp.sh: Service management scripts
+## Security Considerations
+- Always use PKCE for OAuth flows
+- Session cookies are httpOnly
+- CSP headers prevent XSS
+- Circuit breaker protects backend
+- Structured logging (no secrets in logs)
 
-## Key Features
-- **Generic OIDC**: Supports Auth0, Google, Microsoft, GitHub, and any OIDC-compliant provider
-- **OAuth 2.1 + PKCE**: Modern security standards with Proof Key for Code Exchange
-- **Lightweight**: Only authentication proxy, no MCP server execution
-- **Flexible**: Works with any external MCP server
-- **Scalable**: Redis-based session management
-- **Simple**: Easy external publishing via tunnels
-- **Backward Compatible**: Legacy Auth0 environment variables still supported
+## Testing
+- Unit tests for each package
+- Integration tests for session stores
+- Use testify for assertions
+- Mock external dependencies
 
-## Authentication Flow
-1. Client accesses proxy (http://localhost:8080)
-2. If AUTH_MODE=oidc, redirect to OIDC provider
-3. User authenticates with provider (Auth0/Google/etc)
-4. Provider redirects back to /callback with authorization code
-5. Proxy exchanges code for tokens using PKCE
-6. Session stored in Redis
-7. Subsequent requests include user headers (X-USER, X-EMAIL, etc)
-8. Requests proxied to target MCP server
+## Common Tasks
+1. **Add new OIDC provider**: Update documentation, test discovery URL
+2. **Change default headers**: Modify `middleware.DefaultSecurityHeaders`
+3. **Add metrics**: Update `internal/metrics/metrics.go`
+4. **Debug auth flow**: Set `LOG_LEVEL=debug`
 
-## Environment Variables Priority
-1. Generic OIDC variables (OIDC_*) take precedence
-2. Legacy Auth0 variables (AUTH0_*) used as fallback
-3. If AUTH0_DOMAIN is set, it's automatically converted to OIDC_DISCOVERY_URL
-
-## Documentation
-- Keep README.md updated when making significant changes
-- Document configuration parameters in comments
-- Include usage examples for common OIDC providers
-- Maintain backward compatibility notes
+## Important Notes
+- The Nginx/Lua implementation in `legacy/` is deprecated
+- Always test with real OIDC providers before release
+- Cloudflare Tunnels is the recommended deployment method
+- Binary releases are automated via GitHub Actions on tag push

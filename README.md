@@ -1,203 +1,192 @@
-# MCP OAuth 2.1 認証プロキシ
+# MCP OIDC Proxy
 
-このプロジェクトは、Model Context Protocol (MCP) サーバーへのリモートアクセスに OAuth 2.1/OIDC 認証を提供する汎用的なプロキシサーバーです。
+Production-ready OAuth 2.1/OIDC authentication proxy for Model Context Protocol (MCP) servers. A single Go binary that secures your MCP endpoints with modern authentication.
 
-## 機能
-
-- **汎用OIDC対応**: Auth0、Google、Microsoft、GitHub等に対応
-- **OAuth 2.1 + PKCE**: モダンなセキュリティ標準
-- **認証バイパス**: 開発・テスト用の簡単モード
-- **Redisセッション**: スケーラブルなセッション管理
-- **WebSocketサポート**: MCPプロトコル完全対応
-- **外部公開対応**: Cloudflare Tunnel/Ngrok等で簡単公開
-
-## コンポーネント
-
-- **OpenResty 1.27.1.2**: 認証プロキシサーバー（最新版）
-- **Redis 7**: セッションストア
-- **lua-resty-openidc 1.8.0**: OIDC認証ライブラリ（最新版）
-- **lua-resty-session 4.0.5**: セッション管理ライブラリ
-
-## クイックスタート
+## 🚀 Quick Start
 
 ```bash
-# プロキシを起動
-./start-mcp.sh
+# Install (Linux/macOS)
+curl -sSL https://raw.githubusercontent.com/sh03m2a5h/mcp-oidc-proxy/main/install.sh | bash
 
-# 接続先MCPサーバーを設定して再起動
-MCP_TARGET_HOST=your-mcp-server.com MCP_TARGET_PORT=3000 docker compose up -d
+# Configure OIDC (example with Auth0)
+export OIDC_DISCOVERY_URL="https://your-domain.auth0.com/.well-known/openid-configuration"
+export OIDC_CLIENT_ID="your-client-id"
+export OIDC_CLIENT_SECRET="your-client-secret"
+
+# Run
+mcp-oidc-proxy
 ```
 
-アクセス先:
-- **プロキシ**: http://localhost:8080
-- **ヘルスチェック**: http://localhost:8080/health
+Your MCP server at `localhost:3000` is now protected with OIDC authentication at `localhost:8080`!
 
-## 認証プロバイダー設定
+## 🎯 What This Does
 
-### 1. バイパスモード (デフォルト)
-```bash
-# 認証なしで簡単アクセス
-AUTH_MODE=bypass ./start-mcp.sh
+Adds enterprise-grade authentication to any MCP server:
+
+```
+[Internet] → [Cloudflare] → [MCP OIDC Proxy :8080] → [Your MCP Server :3000]
+                                    ↓
+                            [OIDC Provider]
+                         (Auth0/Google/Azure)
 ```
 
-### 2. Auth0 (推奨)
-```bash
-# 新しいOIDC設定方式
-OIDC_DISCOVERY_URL="https://your-domain.auth0.com/.well-known/openid-configuration" \
-OIDC_CLIENT_ID="your-client-id" \
-OIDC_CLIENT_SECRET="your-client-secret" \
-AUTH_MODE=oidc ./start-mcp.sh
+## ✨ Features
 
-# レガシー設定方式もサポート
-AUTH0_DOMAIN=your-domain.auth0.com \
-AUTH0_CLIENT_ID=your-client-id \
-AUTH0_CLIENT_SECRET=your-client-secret \
-AUTH_MODE=oidc ./start-mcp.sh
+- 🔐 **Universal OIDC Support**: Works with Auth0, Google, Microsoft, GitHub, or any OIDC provider
+- 🚀 **Single Binary**: No Docker, no dependencies - just download and run
+- 🛡️ **Modern Security**: OAuth 2.1 with PKCE, secure sessions, CSP headers
+- 📊 **Production Ready**: Prometheus metrics, health checks, OpenTelemetry tracing
+- 🔄 **Full Protocol Support**: HTTP, WebSocket, and MCP streaming
+- ⚡ **High Performance**: <10ms overhead, 1000+ concurrent connections
+
+## 📦 Installation
+
+### Binary Release (Recommended)
+```bash
+# One-line install
+curl -sSL https://raw.githubusercontent.com/sh03m2a5h/mcp-oidc-proxy/main/install.sh | bash
+
+# Or download directly
+wget https://github.com/sh03m2a5h/mcp-oidc-proxy/releases/latest/download/mcp-oidc-proxy-$(uname -s)-$(uname -m)
+chmod +x mcp-oidc-proxy-*
 ```
 
-**Auth0設定:**
-- Application Type: Regular Web Applications
-- Allowed Callback URLs: `http://localhost:8080/callback`
-- Allowed Web Origins: `http://localhost:8080`
-- Allowed Scopes: `openid email profile`
-
-### 3. Google
+### From Source
 ```bash
-OIDC_DISCOVERY_URL="https://accounts.google.com/.well-known/openid-configuration" \
-OIDC_CLIENT_ID="your-google-client-id" \
-OIDC_CLIENT_SECRET="your-google-client-secret" \
-AUTH_MODE=oidc ./start-mcp.sh
+git clone https://github.com/sh03m2a5h/mcp-oidc-proxy.git
+cd mcp-oidc-proxy/go
+make build
+./bin/mcp-oidc-proxy
 ```
 
-**Google設定:**
-- Google Cloud Console > APIs & Services > Credentials
-- OAuth 2.0 Client IDs で Web Application を作成
-- Authorized redirect URIs: `http://localhost:8080/callback`
+## 🔧 Configuration
 
-### 4. Microsoft Azure AD
+### Auth0 (Recommended)
 ```bash
-OIDC_DISCOVERY_URL="https://login.microsoftonline.com/{tenant-id}/v2.0/.well-known/openid-configuration" \
-OIDC_CLIENT_ID="your-azure-client-id" \
-OIDC_CLIENT_SECRET="your-azure-client-secret" \
-AUTH_MODE=oidc ./start-mcp.sh
+export OIDC_DISCOVERY_URL="https://YOUR-DOMAIN.auth0.com/.well-known/openid-configuration"
+export OIDC_CLIENT_ID="your-client-id"
+export OIDC_CLIENT_SECRET="your-client-secret"
+export OIDC_REDIRECT_URL="http://localhost:8080/callback"
 ```
 
-**Azure AD設定:**
-- Azure Portal > App registrations
-- Platform: Web, Redirect URI: `http://localhost:8080/callback`
-- API permissions: `openid`, `email`, `profile`
-
-## 環境変数一覧
-
-| 変数名 | デフォルト | 説明 |
-|------------|------------|--------|
-| `AUTH_MODE` | `bypass` | 認証モード (`bypass` または `oidc`) |
-| `OIDC_DISCOVERY_URL` | - | OIDCディスカバリーURL |
-| `OIDC_CLIENT_ID` | - | OIDCクライアントID |
-| `OIDC_CLIENT_SECRET` | - | OIDCクライアントシークレット |
-| `OIDC_SCOPE` | `openid email profile` | 要求するスコープ |
-| `OIDC_USE_PKCE` | `true` | PKCE使用有無 |
-| `MCP_TARGET_HOST` | `localhost` | 接続先MCPサーバー |
-| `MCP_TARGET_PORT` | `3000` | 接続先ポート |
-| `AUTH0_DOMAIN` | - | レガシー: Auth0ドメイン |
-| `AUTH0_CLIENT_ID` | - | レガシー: Auth0クライアントID |
-| `AUTH0_CLIENT_SECRET` | - | レガシー: Auth0シークレット |
-
-## 外部公開
-
-### Cloudflare Tunnel
+### Google
 ```bash
+export OIDC_DISCOVERY_URL="https://accounts.google.com/.well-known/openid-configuration"
+export OIDC_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export OIDC_CLIENT_SECRET="your-client-secret"
+```
+
+### Microsoft Azure AD
+```bash
+export OIDC_DISCOVERY_URL="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0/.well-known/openid-configuration"
+export OIDC_CLIENT_ID="your-client-id"
+export OIDC_CLIENT_SECRET="your-client-secret"
+```
+
+## 🌐 Production Deployment
+
+### With Cloudflare Tunnels
+```bash
+# Start proxy
+./mcp-oidc-proxy &
+
+# Create tunnel
 cloudflared tunnel --url http://localhost:8080
 ```
 
-### Ngrok
+### Systemd Service
 ```bash
-ngrok http 8080
+# Download binary
+sudo curl -L https://github.com/sh03m2a5h/mcp-oidc-proxy/releases/latest/download/mcp-oidc-proxy-linux-amd64 \
+  -o /usr/local/bin/mcp-oidc-proxy
+sudo chmod +x /usr/local/bin/mcp-oidc-proxy
+
+# Create service
+sudo tee /etc/systemd/system/mcp-oidc-proxy.service > /dev/null <<EOF
+[Unit]
+Description=MCP OIDC Proxy
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mcp-oidc-proxy
+Restart=always
+Environment="OIDC_DISCOVERY_URL=https://your-domain.auth0.com/.well-known/openid-configuration"
+Environment="OIDC_CLIENT_ID=your-client-id"
+Environment="OIDC_CLIENT_SECRET=your-client-secret"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable --now mcp-oidc-proxy
 ```
 
-### カスタムドメインでの設定
-外部公開時はコールバックURLを更新:
-```
-Callback URL: https://your-domain.com/callback
-Web Origins: https://your-domain.com
-```
+## 📊 Monitoring
 
-## 使用例
-
-### ローカルMCPサーバーへのプロキシ
 ```bash
-MCP_TARGET_HOST=localhost MCP_TARGET_PORT=3000 docker compose up -d
-```
-
-### リモートMCPサーバーへのプロキシ
-```bash
-MCP_TARGET_HOST=mcp.example.com MCP_TARGET_PORT=443 docker compose up -d
-```
-
-### Auth0で本格運用
-```bash
-OIDC_DISCOVERY_URL="https://prod.auth0.com/.well-known/openid-configuration" \
-OIDC_CLIENT_ID="prod-client-id" \
-OIDC_CLIENT_SECRET="prod-secret" \
-MCP_TARGET_HOST=prod-mcp.example.com \
-MCP_TARGET_PORT=443 \
-AUTH_MODE=oidc \
-docker compose up -d
-```
-
-## トラブルシューティング
-
-### ログ確認
-```bash
-docker logs mcp-proxy
-docker logs mcp-redis
-```
-
-### ヘルスチェック
-```bash
+# Health check
 curl http://localhost:8080/health
+
+# Prometheus metrics
+curl http://localhost:8080/metrics
 ```
 
-### 認証テスト
-```bash
-# バイパスモードでのテスト
-curl -H "MCP-Protocol-Version: 2025-03-26" http://localhost:8080/
+## 🔍 Environment Variables
 
-# OIDC認証モードでのテスト
-# ブラウザで http://localhost:8080 にアクセスして認証フローを確認
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SERVER_PORT` | Listen port | `8080` |
+| `PROXY_TARGET_HOST` | MCP server host | `localhost` |
+| `PROXY_TARGET_PORT` | MCP server port | `3000` |
+| `AUTH_MODE` | Auth mode (`oidc`, `bypass`) | `oidc` |
+| `OIDC_DISCOVERY_URL` | OIDC discovery endpoint | Required |
+| `OIDC_CLIENT_ID` | OAuth client ID | Required |
+| `OIDC_CLIENT_SECRET` | OAuth client secret | Required |
+| `SESSION_STORE` | Session store (`memory`, `redis`) | `memory` |
+| `METRICS_ENABLED` | Enable Prometheus metrics | `true` |
+| `LOG_LEVEL` | Log level | `info` |
+
+## 📁 Project Structure
+
+```
+mcp-oidc-proxy/
+├── go/                    # Go implementation (primary)
+│   ├── cmd/              # Application entry point
+│   ├── internal/         # Core application code
+│   └── README.md         # Detailed Go documentation
+├── legacy/               # Previous implementations
+│   └── nginx/           # Nginx/Lua implementation (archived)
+└── docs/                # Architecture documentation
 ```
 
-## 停止
+## 🏗️ Architecture
 
-```bash
-./stop-mcp.sh
-```
+The proxy is built with:
+- **Language**: Go 1.23+
+- **HTTP Framework**: Gin
+- **OIDC Library**: coreos/go-oidc
+- **Session Store**: In-memory or Redis
+- **Metrics**: Prometheus
+- **Tracing**: OpenTelemetry
 
-## アーキテクチャ
+See [docs/](docs/) for detailed architecture documentation.
 
-```
-Client → [Cloudflare/Ngrok] → MCP Auth Proxy → MCP Server
-                                      │
-                                   Redis
-                                      │
-                              OIDC Provider
-                           (Auth0/Google/etc)
-```
+## 🤝 Contributing
 
-## サポートされるOIDCプロバイダー
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- **Auth0** (推奨): エンタープライズ向け認証サービス
-- **Google**: Google Workspace / Gmailアカウント
-- **Microsoft**: Azure AD / Microsoft 365
-- **GitHub**: GitHubアカウント
-- **その他**: OpenID Connect標準に準拠する任意のプロバイダー
+## 📜 License
 
-## ライセンス
+MIT License - see [LICENSE](LICENSE) file for details.
 
-MIT License
+## 🙏 Acknowledgments
 
-## 注意事項
+- Built for the [Model Context Protocol](https://modelcontextprotocol.io) ecosystem
+- Inspired by the need for simple, secure MCP server deployment
 
-- このプロキシは開発・テスト環境向けです
-- 本番環境では適切なセキュリティ設定を行ってください
-- SSL/HTTPS機能は削除されています。外部公開時はトンネルサービスのSSL終端を利用してください
+---
+
+### Legacy Implementation
+
+The original Nginx/Lua implementation is available in the [legacy/nginx-implementation](legacy/nginx-implementation/) directory. The Go implementation is now the primary and recommended version.

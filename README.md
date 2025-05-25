@@ -2,6 +2,10 @@
 
 Production-ready OAuth 2.1/OIDC authentication proxy for Model Context Protocol (MCP) servers. A single Go binary that secures your MCP endpoints with modern authentication.
 
+> **🤖 Note**: This project is primarily developed and maintained by AI (Claude, GitHub Copilot, Gemini Code Assist) with minimal human intervention. Code quality is ensured through AI review tools.
+
+[日本語版 README](README.ja.md)
+
 ## 🚀 Quick Start
 
 ```bash
@@ -198,9 +202,21 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - Built for the [Model Context Protocol](https://modelcontextprotocol.io) ecosystem
 - Inspired by the need for simple, secure MCP server deployment
 - SSE/WebSocket streaming support developed for [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) compatibility
+- **Development**: This project is primarily developed by Claude (Anthropic), GitHub Copilot, and Gemini Code Assist
 
 ---
 
 ### Legacy Implementation
 
 The original Nginx/Lua implementation is available in the [legacy/nginx-implementation](legacy/nginx-implementation/) directory. The Go implementation is now the primary and recommended version.
+
+## 🤖 About AI-Driven Development
+
+This is an experimental project developed and maintained by AI tools with minimal human developer intervention:
+
+- **Code Generation**: Primary development by Claude (Anthropic)
+- **Code Review**: Automated reviews by GitHub Copilot and Gemini Code Assist
+- **Testing**: AI-generated test cases and AI-implemented tests
+- **Documentation**: All documentation including this README is AI-generated
+
+The human role is primarily limited to project direction and coordination between AI tools.

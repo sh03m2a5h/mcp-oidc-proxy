@@ -83,3 +83,70 @@ cloudflared tunnel --url http://localhost:8080
 - Always test with real OIDC providers before release
 - Cloudflare Tunnels is the recommended deployment method
 - Binary releases are automated via GitHub Actions on tag push
+
+## Pull Request Guidelines
+
+### Creating Pull Requests
+1. **Branch Naming**: Use descriptive names like `feature/sse-streaming`, `fix/session-leak`, `docs/api-update`
+2. **PR Title**: Clear, concise, imperative mood (e.g., "Add SSE streaming support", not "Added SSE streaming")
+3. **PR Description**: Include:
+   - Summary of changes
+   - Link to related issues with `Closes #123`
+   - Test plan or validation steps
+   - Breaking changes if any
+
+### AI Code Review Setup
+
+#### GitHub Copilot Code Review
+1. **Enable Review**:
+   - Select "Copilot" from the Reviewers dropdown on your PR
+   - Or configure automatic reviews: Repository Settings → Rules → "Request pull request review from Copilot"
+2. **Best Practices**:
+   - Keep PRs small and focused (under 500 lines ideal)
+   - Ensure CI passes before requesting review
+   - Use `copilot:summary` in PR comments for summaries
+   - Use `copilot:walkthrough` for detailed explanations
+
+#### Gemini Code Assist
+1. **Setup**:
+   - Install from GitHub Marketplace
+   - Reviews automatically within 5 minutes of PR creation
+2. **Commands**:
+   - `@gemini-code-assist review` - Request review
+   - `/gemini explain` - Ask for explanations
+   - `/gemini suggest` - Get improvement suggestions
+3. **Configuration** (optional):
+   ```yaml
+   # .gemini/config.yaml
+   disable: false
+   comment_severity_threshold: MEDIUM
+   max_review_comments: -1
+   ```
+
+### PR Review Workflow
+1. Create feature branch and push changes
+2. Open PR with clear description
+3. Wait for CI to pass
+4. Request AI reviews (Copilot and/or Gemini)
+5. Address feedback with new commits (don't force-push during review)
+6. Re-request reviews after significant changes
+7. Squash merge when approved
+
+### Example PR Description
+```markdown
+## Summary
+Add dedicated SSE/WebSocket streaming support to fix panic with ResponseRecorder
+
+## Changes
+- Added streaming detection for SSE and WebSocket requests
+- Implemented direct proxy handlers bypassing ResponseRecorder
+- Added streaming-specific metrics
+- Comprehensive test coverage
+
+## Testing
+- Unit tests pass
+- Integration test with mcp-proxy confirms no panic
+- Manual testing with SSE client successful
+
+Closes #15
+```

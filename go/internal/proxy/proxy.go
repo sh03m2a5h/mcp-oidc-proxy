@@ -140,6 +140,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Update request context
 	r = r.WithContext(ctx)
+	
+	// Check if this is a streaming request
+	if isStreamingRequest(r) {
+		span.SetAttributes(attribute.Bool("proxy.streaming", true))
+		p.handleStreaming(w, r)
+		return
+	}
 
 	// Check circuit breaker state
 	allow := p.circuitBreaker.Allow()

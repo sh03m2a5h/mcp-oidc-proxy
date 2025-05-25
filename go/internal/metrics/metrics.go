@@ -109,6 +109,23 @@ var (
 		[]string{"operation", "store_type"},
 	)
 
+	// Streaming metrics
+	ProxyStreamingRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mcp_oidc_proxy_streaming_requests_total",
+			Help: "Total number of streaming requests (SSE/WebSocket)",
+		},
+		[]string{"type", "target"},
+	)
+
+	ProxyStreamingErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mcp_oidc_proxy_streaming_errors_total",
+			Help: "Total number of streaming errors",
+		},
+		[]string{"error_type", "target"},
+	)
+
 	// Application info
 	BuildInfo = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{

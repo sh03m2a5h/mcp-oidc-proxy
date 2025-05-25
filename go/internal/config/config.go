@@ -71,6 +71,7 @@ type OIDCConfig struct {
 	EndSessionEndpoint     string   `mapstructure:"end_session_endpoint"`
 	PostLogoutRedirectURI  string   `mapstructure:"post_logout_redirect_uri"`
 	UseUserInfo            bool     `mapstructure:"use_userinfo"`
+	ProviderName           string   `mapstructure:"provider_name"`
 }
 
 // SessionConfig holds session management configuration
@@ -221,6 +222,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("oidc.use_pkce", true)
 	v.SetDefault("oidc.redirect_url", "http://localhost:8080/callback")
 	v.SetDefault("oidc.post_logout_redirect_url", "http://localhost:8080/")
+	v.SetDefault("oidc.provider_name", "oidc")
 
 	// Session defaults
 	v.SetDefault("session.store", "memory")
@@ -296,6 +298,7 @@ func applyLegacyAuth0Config(config *Config) {
 	// If Auth0 legacy vars are set and OIDC is not configured
 	if auth0Domain != "" && config.OIDC.DiscoveryURL == "" {
 		config.OIDC.DiscoveryURL = fmt.Sprintf("https://%s/.well-known/openid-configuration", auth0Domain)
+		config.OIDC.ProviderName = "auth0"
 		if auth0ClientID != "" {
 			config.OIDC.ClientID = auth0ClientID
 		}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/session"
 	"go.uber.org/zap"
 )
@@ -58,6 +59,7 @@ func (h *Handler) Authorize(c *gin.Context) {
 	state, err := generateRandomString(32)
 	if err != nil {
 		h.logger.Error("Failed to generate state", zap.Error(err))
+		metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "error").Inc()
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to generate state",
 		})
@@ -103,6 +105,10 @@ func (h *Handler) Authorize(c *gin.Context) {
 
 // Callback handles the authorization callback
 func (h *Handler) Callback(c *gin.Context) {
+	start := time.Now()
+	defer func() {
+		metrics.AuthCallbackDuration.Observe(time.Since(start).Seconds())
+	}()
 	// Get state and code from query parameters
 	state := c.Query("state")
 	code := c.Query("code")
@@ -115,6 +121,7 @@ func (h *Handler) Callback(c *gin.Context) {
 			zap.String("error", errorParam),
 			zap.String("description", errorDesc),
 		)
+		metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "error").Inc()
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":             errorParam,
 			"error_description": errorDesc,
@@ -221,6 +228,9 @@ func (h *Handler) Callback(c *gin.Context) {
 		zap.String("email", email),
 		zap.String("session_id", sessionID),
 	)
+
+	// Record successful callback
+	metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "success").Inc()
 
 	// Set session cookie
 	c.SetCookie(

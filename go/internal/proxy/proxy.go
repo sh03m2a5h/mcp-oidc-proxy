@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"time"
 
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -106,6 +108,14 @@ func New(config *Config, logger *zap.Logger) (*Proxy, error) {
 // ServeHTTP implements http.Handler interface
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	start := time.Now()
+
+	// Record circuit breaker state
+	state := float64(0) // closed
+	if !p.circuitBreaker.Allow() {
+		state = float64(1) // open
+	}
+	metrics.CircuitBreakerState.WithLabelValues(p.target.String()).Set(state)
 
 	// Check circuit breaker
 	if !p.circuitBreaker.Allow() {
@@ -113,13 +123,22 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			zap.String("method", r.Method),
 			zap.String("url", r.URL.String()),
 		)
+		metrics.ProxyRequestsTotal.WithLabelValues(r.Method, "503", p.target.String()).Inc()
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte("Service Unavailable"))
 		return
 	}
 
 	// Execute with retry
-	err := p.executeWithRetry(ctx, w, r)
+	statusCode, err := p.executeWithRetry(ctx, w, r)
+	
+	// Calculate duration
+	duration := time.Since(start).Seconds()
+	
+	// Record metrics
+	status := strconv.Itoa(statusCode)
+	metrics.ProxyRequestsTotal.WithLabelValues(r.Method, status, p.target.String()).Inc()
+	metrics.ProxyRequestDuration.WithLabelValues(r.Method, status, p.target.String()).Observe(duration)
 	
 	// Record result in circuit breaker
 	if err != nil {
@@ -130,7 +149,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // executeWithRetry executes the proxy request with retry logic
-func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *http.Request) (int, error) {
 	var lastErr error
 
 	// For requests with body, ensure we can replay it
@@ -152,14 +171,14 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 			select {
 			case <-time.After(p.retryConfig.Backoff):
 			case <-ctx.Done():
-				return ctx.Err()
+				return 0, ctx.Err()
 			}
 
 			// Reset request body if possible
 			if r.GetBody != nil {
 				newBody, err := r.GetBody()
 				if err != nil {
-					return fmt.Errorf("failed to reset request body: %w", err)
+					return 0, fmt.Errorf("failed to reset request body: %w", err)
 				}
 				r.Body = newBody
 			}
@@ -169,6 +188,7 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 				zap.String("method", r.Method),
 				zap.String("url", r.URL.String()),
 			)
+			metrics.ProxyRetryTotal.WithLabelValues(r.Method, p.target.String()).Inc()
 		}
 
 		// Always use response recorder to capture status
@@ -176,6 +196,7 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 
 		// Execute request
 		p.reverseProxy.ServeHTTP(recorder, r)
+
 
 		// Check if retry is needed
 		if recorder.StatusCode >= 500 && recorder.StatusCode < 600 {
@@ -189,15 +210,17 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 			// Last attempt with 5xx error - still write the response
 			// but return error for circuit breaker
 			recorder.WriteTo(w)
-			return lastErr
+			return recorder.StatusCode, lastErr
 		}
 
 		// Success - write to actual response
 		recorder.WriteTo(w)
-		return nil
+		return recorder.StatusCode, nil
 	}
 
-	return lastErr
+	// If we get here, all retries failed
+	// Return 500 as we couldn't complete the request
+	return 500, lastErr
 }
 
 // Health checks if the target server is healthy

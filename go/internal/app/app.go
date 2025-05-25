@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/auth/oidc"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/middleware"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/proxy"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/session"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/server"
@@ -42,6 +45,9 @@ func New(configPath string) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup logger: %w", err)
 	}
+
+	// Initialize metrics build info
+	metrics.SetBuildInfo(version.Version, version.GitCommit, version.BuildDate)
 
 	// Create session store
 	factory := session.NewFactory(logger)
@@ -92,8 +98,16 @@ func New(configPath string) (*App, error) {
 func (a *App) setupRoutes() {
 	router := a.server.Router()
 
+	// Apply metrics middleware
+	router.Use(middleware.MetricsMiddleware())
+
 	// Health check endpoint (public)
 	router.GET("/health", a.healthHandler)
+
+	// Metrics endpoint (public)
+	if a.config.Metrics.Enabled {
+		router.GET(a.config.Metrics.Path, gin.WrapH(promhttp.Handler()))
+	}
 
 	// OIDC authentication routes
 	router.GET("/login", a.oidcHandler.Authorize)
@@ -101,7 +115,7 @@ func (a *App) setupRoutes() {
 	router.POST("/logout", a.oidcHandler.Logout)
 
 	// Apply authentication middleware to all other routes
-	authMiddleware := oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback"})
+	authMiddleware := oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback", a.config.Metrics.Path})
 	
 	// Protected routes group
 	protected := router.Group("/")
@@ -168,31 +182,51 @@ func (a *App) shutdown(ctx context.Context) error {
 
 // healthHandler handles health check requests
 func (a *App) healthHandler(c *gin.Context) {
-	// Check proxy target health
-	if err := a.proxy.Health(c.Request.Context()); err != nil {
-		a.logger.Warn("Proxy target health check failed", zap.Error(err))
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"status": "unhealthy",
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	// Check session store health
-	if _, err := a.sessionStore.Stats(c.Request.Context()); err != nil {
-		a.logger.Warn("Session store health check failed", zap.Error(err))
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"status": "unhealthy",
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "healthy",
+	ctx := c.Request.Context()
+	
+	// Initialize health response
+	health := gin.H{
+		"status":    "healthy",
 		"timestamp": time.Now().UTC(),
-		"version": version.Version,
-	})
+		"version":   version.Version,
+		"checks":    gin.H{},
+	}
+	
+	overallHealthy := true
+	
+	// Check proxy target health
+	proxyHealth := gin.H{"status": "healthy"}
+	if err := a.proxy.Health(ctx); err != nil {
+		a.logger.Warn("Proxy target health check failed", zap.Error(err))
+		proxyHealth["status"] = "unhealthy"
+		proxyHealth["error"] = err.Error()
+		overallHealthy = false
+	}
+	health["checks"].(gin.H)["proxy_target"] = proxyHealth
+	
+	// Check session store health
+	sessionHealth := gin.H{"status": "healthy"}
+	if stats, err := a.sessionStore.Stats(ctx); err != nil {
+		a.logger.Warn("Session store health check failed", zap.Error(err))
+		sessionHealth["status"] = "unhealthy"
+		sessionHealth["error"] = err.Error()
+		overallHealthy = false
+	} else {
+		if s, ok := stats.(*session.Stats); ok {
+			sessionHealth["active_sessions"] = s.ActiveSessions
+			sessionHealth["store_type"] = s.StoreType
+		}
+	}
+	health["checks"].(gin.H)["session_store"] = sessionHealth
+	
+	// Set overall status
+	if !overallHealthy {
+		health["status"] = "degraded"
+		c.JSON(http.StatusServiceUnavailable, health)
+		return
+	}
+	
+	c.JSON(http.StatusOK, health)
 }
 
 // sessionHandler handles session info requests

@@ -121,7 +121,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !p.circuitBreaker.Allow() {
 		p.logger.Warn("Circuit breaker open, rejecting request",
 			zap.String("method", r.Method),
-			zap.String("url", r.URL.String()),
+			zap.String("path", r.URL.Path),
+			zap.String("query", r.URL.RawQuery),
+			zap.String("user_agent", r.UserAgent()),
+			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("target", p.target.String()),
 		)
 		metrics.ProxyRequestsTotal.WithLabelValues(r.Method, "503", p.target.String()).Inc()
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -160,7 +164,10 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 			p.logger.Warn("Request body cannot be replayed for retries",
 				zap.String("method", r.Method),
-				zap.String("url", r.URL.String()),
+				zap.String("path", r.URL.Path),
+				zap.String("content_type", r.Header.Get("Content-Type")),
+				zap.Int64("content_length", r.ContentLength),
+				zap.String("target", p.target.String()),
 			)
 			// Set MaxAttempts to 1 to disable retry for non-replayable bodies
 			p.retryConfig.MaxAttempts = 1
@@ -187,8 +194,11 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 
 			p.logger.Debug("Retrying proxy request",
 				zap.Int("attempt", attempt),
+				zap.Int("max_attempts", p.retryConfig.MaxAttempts),
 				zap.String("method", r.Method),
-				zap.String("url", r.URL.String()),
+				zap.String("path", r.URL.Path),
+				zap.Duration("backoff", p.retryConfig.Backoff),
+				zap.String("target", p.target.String()),
 			)
 			metrics.ProxyRetryTotal.WithLabelValues(r.Method, p.target.String()).Inc()
 		}

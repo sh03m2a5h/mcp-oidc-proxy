@@ -58,7 +58,11 @@ func (h *Handler) Authorize(c *gin.Context) {
 	// Generate state for CSRF protection
 	state, err := generateRandomString(32)
 	if err != nil {
-		h.logger.Error("Failed to generate state", zap.Error(err))
+		h.logger.Error("Failed to generate state",
+			zap.Error(err),
+			zap.String("remote_addr", c.Request.RemoteAddr),
+			zap.String("user_agent", c.Request.UserAgent()),
+		)
 		metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "error").Inc()
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to generate state",

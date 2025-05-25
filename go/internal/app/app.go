@@ -20,6 +20,7 @@ import (
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/server"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/pkg/version"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // App represents the main application
@@ -100,6 +101,10 @@ func (a *App) setupRoutes() {
 
 	// Apply metrics middleware
 	router.Use(middleware.MetricsMiddleware())
+
+	// Apply structured logging middleware
+	router.Use(middleware.StructuredLoggingMiddleware(a.logger))
+	router.Use(middleware.RequestContextMiddleware())
 
 	// Health check endpoint (public)
 	router.GET("/health", a.healthHandler)
@@ -269,13 +274,31 @@ func setupLogger(config *config.LoggingConfig) (*zap.Logger, error) {
 		zapConfig.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
 	}
 
-	// Set output format
+	// Set encoding based on format
 	if config.Format == "console" {
 		zapConfig.Encoding = "console"
 		zapConfig.EncoderConfig = zap.NewDevelopmentEncoderConfig()
+		zapConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	} else {
 		zapConfig.Encoding = "json"
 		zapConfig.EncoderConfig = zap.NewProductionEncoderConfig()
+		zapConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	}
+
+	// Add caller information for debug and development
+	if config.Level == "debug" || config.Format == "console" {
+		zapConfig.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+		zapConfig.Development = true
+	}
+
+	// Set output paths
+	zapConfig.OutputPaths = []string{config.Output}
+	zapConfig.ErrorOutputPaths = []string{config.Output}
+
+	// Add service name and version to all logs
+	zapConfig.InitialFields = map[string]interface{}{
+		"service": "mcp-oidc-proxy",
+		"version": version.Version,
 	}
 
 	return zapConfig.Build()

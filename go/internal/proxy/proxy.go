@@ -143,6 +143,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Record result in circuit breaker
 	if err != nil {
 		p.circuitBreaker.RecordFailure()
+		// Record circuit breaker failure metric
+		metrics.CircuitBreakerFailures.WithLabelValues(p.target.String()).Inc()
 	} else {
 		p.circuitBreaker.RecordSuccess()
 	}
@@ -171,14 +173,14 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 			select {
 			case <-time.After(p.retryConfig.Backoff):
 			case <-ctx.Done():
-				return 0, ctx.Err()
+				return http.StatusRequestTimeout, ctx.Err()
 			}
 
 			// Reset request body if possible
 			if r.GetBody != nil {
 				newBody, err := r.GetBody()
 				if err != nil {
-					return 0, fmt.Errorf("failed to reset request body: %w", err)
+					return http.StatusBadRequest, fmt.Errorf("failed to reset request body: %w", err)
 				}
 				r.Body = newBody
 			}
@@ -219,8 +221,8 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 	}
 
 	// If we get here, all retries failed
-	// Return 500 as we couldn't complete the request
-	return 500, lastErr
+	// Return 502 Bad Gateway as we couldn't reach the backend
+	return http.StatusBadGateway, lastErr
 }
 
 // Health checks if the target server is healthy

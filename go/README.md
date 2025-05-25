@@ -19,10 +19,11 @@ This proxy sits between the internet and your MCP server, providing:
 - 🔐 **Universal OIDC**: Works with Auth0, Google, Microsoft, GitHub, or any OIDC provider
 - 🛡️ **Modern Security**: OAuth 2.1 + PKCE flow
 - 📊 **Production Ready**: Prometheus metrics, health checks, structured logging
-- 🔄 **Full Protocol Support**: HTTP, WebSocket, and streaming
+- 🔄 **Full Protocol Support**: HTTP, SSE/WebSocket streaming, and MCP protocols
 - ⚡ **High Performance**: <10ms overhead, handles 1000+ concurrent connections
 - 🔍 **Observability**: OpenTelemetry tracing, detailed metrics
 - 💾 **Flexible Sessions**: In-memory or Redis session storage
+- 🧪 **Bypass Mode**: Development/testing mode without authentication
 
 ## 🚀 Quick Start
 
@@ -316,6 +317,8 @@ For applications requiring different policies, consider modifying `DefaultSecuri
 - [x] Prometheus metrics
 - [x] OpenTelemetry tracing
 - [x] Circuit breaker & retry logic
+- [x] SSE/WebSocket streaming support
+- [x] Bypass mode for development
 - [x] Multi-platform binaries
 - [ ] Admin API for session management
 - [ ] Built-in rate limiting
@@ -335,3 +338,4 @@ This project is licensed under the MIT License - see the [LICENSE](../LICENSE) f
 - Built for the [Model Context Protocol](https://modelcontextprotocol.io) ecosystem
 - Inspired by the need for simple, secure MCP server deployment
 - Cloudflare Tunnels for making zero-trust access easy
+- SSE/WebSocket streaming support developed for [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) compatibility

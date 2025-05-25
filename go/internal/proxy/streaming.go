@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -51,7 +53,7 @@ func (p *Proxy) handleStreaming(w http.ResponseWriter, r *http.Request) {
 		zap.String("path", r.URL.Path),
 		zap.String("target", p.target.String()),
 		zap.Bool("sse", strings.Contains(r.Header.Get("Accept"), "text/event-stream")),
-		zap.Bool("websocket", r.Header.Get("Upgrade") == "websocket"),
+		zap.Bool("websocket", strings.ToLower(r.Header.Get("Upgrade")) == "websocket"),
 	)
 	
 	// Metrics
@@ -109,6 +111,17 @@ func (p *Proxy) streamingProxy(w http.ResponseWriter, r *http.Request) int {
 	// Copy headers
 	copyHeaders(proxyReq.Header, r.Header)
 	
+	// Add standard proxy headers (same as main proxy)
+	proxyReq.Header.Set("X-Forwarded-Proto", getScheme(r))
+	proxyReq.Header.Set("X-Forwarded-Host", r.Host)
+	
+	// Inject trace context into outgoing request headers
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(r.Context(), propagation.HeaderCarrier(proxyReq.Header))
+	
+	// Remove hop-by-hop headers from request
+	removeHopHeaders(proxyReq.Header)
+	
 	// Perform request
 	resp, err := client.Do(proxyReq)
 	if err != nil {
@@ -123,6 +136,9 @@ func (p *Proxy) streamingProxy(w http.ResponseWriter, r *http.Request) int {
 	
 	// Copy response headers
 	copyHeaders(w.Header(), resp.Header)
+	
+	// Remove hop-by-hop headers from response
+	removeHopHeaders(w.Header())
 	
 	// Set status code
 	w.WriteHeader(resp.StatusCode)
@@ -165,21 +181,6 @@ func (p *Proxy) handleSSEStream(w http.ResponseWriter, body io.Reader) {
 		// Flush to send immediately
 		flusher.Flush()
 	}
-}
-
-// handleWebSocketUpgrade handles WebSocket protocol upgrade
-func (p *Proxy) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request, resp *http.Response) {
-	// WebSocket requires special handling that is more complex than our current implementation
-	// For now, we'll use the standard reverse proxy which handles WebSocket correctly
-	p.logger.Warn("WebSocket upgrade detected but using standard proxy",
-		zap.String("method", r.Method),
-		zap.String("path", r.URL.Path),
-		zap.String("upgrade", r.Header.Get("Upgrade")),
-	)
-	
-	// The reverse proxy in httputil handles WebSocket upgrades automatically
-	// when it detects the Upgrade header, so we don't need custom handling here.
-	// The streamingProxy function should be modified to use the reverse proxy directly.
 }
 
 // copyHeaders copies headers from source to destination

@@ -108,7 +108,10 @@ func New(configPath string) (*App, error) {
 func (a *App) setupRoutes() {
 	router := a.server.Router()
 
-	// Apply tracing middleware (first to capture everything)
+	// Apply security headers (first for all responses)
+	router.Use(middleware.SecurityHeadersMiddleware())
+
+	// Apply tracing middleware (capture everything)
 	if a.config.Tracing.Enabled {
 		router.Use(middleware.TracingMiddleware(a.config.Tracing.ServiceName))
 	}

@@ -140,7 +140,7 @@ func (a *App) setupRoutes() {
 	
 	if a.config.Auth.Mode == "bypass" {
 		// Bypass mode - no login/logout routes needed
-		authMiddleware = bypass.AuthMiddleware(a.logger, []string{"/health", a.config.Metrics.Path})
+		authMiddleware = bypass.AuthMiddleware(a.logger)
 	} else {
 		// OIDC mode - setup authentication routes
 		router.GET("/login", a.oidcHandler.Authorize)

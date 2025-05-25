@@ -6,7 +6,7 @@ import (
 )
 
 // AuthMiddleware creates a middleware that bypasses authentication
-func AuthMiddleware(logger *zap.Logger, excludePaths []string) gin.HandlerFunc {
+func AuthMiddleware(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// In bypass mode, set mock user headers
 		c.Request.Header.Set("X-User-ID", "bypass-user")

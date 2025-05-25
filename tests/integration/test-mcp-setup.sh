@@ -42,14 +42,14 @@ echo "Terminal 1 - Start MCP server:"
 echo -e "${GREEN}./run-mcp-proxy.sh${NC}"
 echo
 echo "Terminal 2 - Start OIDC Proxy (bypass mode for testing):"
-echo -e "${GREEN}AUTH_MODE=bypass ./go/bin/mcp-oidc-proxy${NC}"
+echo -e "${GREEN}cd ../go && ./bin/mcp-oidc-proxy --config ../tests/integration/test-config.yaml${NC}"
 echo
 echo "Terminal 3 - Test the setup:"
 echo -e "${GREEN}# Test health check${NC}"
-echo "curl http://localhost:8080/health"
+echo "curl http://localhost:8090/health"
 echo
 echo -e "${GREEN}# Test MCP server through proxy${NC}"
-echo "curl -X POST http://localhost:8080/ -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{}},\"id\":1}'"
+echo "curl -X POST http://localhost:8090/mcp/ -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{}},\"id\":1}'"
 echo
 echo -e "${GREEN}# Test with OIDC authentication:${NC}"
 echo "export AUTH_MODE=oidc"
@@ -59,57 +59,10 @@ echo "export OIDC_CLIENT_SECRET=your-client-secret"
 echo "./go/bin/mcp-oidc-proxy"
 echo
 
-# Step 4: Create test client
-cat > test-mcp-client.py << 'EOF'
-#!/usr/bin/env python3
-"""Simple MCP client to test the proxy"""
-
-import requests
-import json
-
-PROXY_URL = "http://localhost:8080"
-
-def test_initialize():
-    """Test MCP initialize method"""
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {}
-        },
-        "id": 1
-    }
-    
-    response = requests.post(PROXY_URL, json=payload)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {json.dumps(response.json(), indent=2)}")
-
-def test_list_tools():
-    """Test listing available tools"""
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "list/tools",
-        "params": {},
-        "id": 2
-    }
-    
-    response = requests.post(PROXY_URL, json=payload)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {json.dumps(response.json(), indent=2)}")
-
-if __name__ == "__main__":
-    print("Testing MCP OIDC Proxy...")
-    print("=" * 50)
-    
-    print("\n1. Testing initialize:")
-    test_initialize()
-    
-    print("\n2. Testing list/tools:")
-    test_list_tools()
-EOF
-chmod +x test-mcp-client.py
-
-echo -e "${GREEN}✓ Created test-mcp-client.py${NC}"
+# Step 4: Note about test clients
+echo -e "${GREEN}✓ Test client scripts are available in this directory:${NC}"
+echo "  - test-mcp-client.py: Basic HTTP client tests"
+echo "  - test-mcp-sse.py: SSE streaming tests"
+echo "  - test-mcp-message.py: Message sending tests"
 echo
 echo -e "${YELLOW}Setup complete! Follow the test commands above to verify the integration.${NC}"

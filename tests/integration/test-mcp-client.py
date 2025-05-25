@@ -1,4 +1,4 @@
-#\!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Simple test client for MCP OIDC Proxy with mcp-server-fetch
 """

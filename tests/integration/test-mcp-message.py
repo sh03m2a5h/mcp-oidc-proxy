@@ -5,12 +5,29 @@ Test sending MCP messages through OIDC proxy
 import json
 import requests
 
+def get_session_id():
+    """Get a new session ID by making an initial request"""
+    headers = {'Accept': 'text/event-stream'}
+    response = requests.get('http://localhost:8090/mcp/', headers=headers)
+    
+    # Extract session ID from response headers
+    session_id = response.headers.get('Mcp-Session-Id')
+    if not session_id:
+        raise ValueError("No session ID received from server")
+    
+    print(f"Got session ID: {session_id}")
+    return session_id
+
 def test_mcp_message():
     """Test sending an MCP message"""
     print("Testing MCP message through OIDC proxy...")
     
-    # Use the session ID from previous request
-    session_id = "b9bed4179ccc486ba92b669df7c9905c"
+    # Get a fresh session ID
+    try:
+        session_id = get_session_id()
+    except Exception as e:
+        print(f"Failed to get session ID: {e}")
+        return
     
     # Initialize message
     message = {

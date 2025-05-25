@@ -65,19 +65,9 @@ func New(cfg *Config, logger *zap.Logger) *Server {
 		logger: logger,
 	}
 
-	// Setup routes
-	s.setupRoutes()
+	// Don't setup routes here - let the app handle all routing
 
 	return s
-}
-
-// setupRoutes configures all routes
-func (s *Server) setupRoutes() {
-	// Health check endpoint
-	s.router.GET("/health", s.handleHealth)
-	
-	// Version endpoint
-	s.router.GET("/api/v1/version", s.handleVersion)
 }
 
 // Run starts the HTTP server

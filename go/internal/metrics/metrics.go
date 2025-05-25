@@ -125,7 +125,7 @@ var (
 		},
 		[]string{"error_type", "target"},
 	)
-	
+
 	// Application info
 	BuildInfo = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{

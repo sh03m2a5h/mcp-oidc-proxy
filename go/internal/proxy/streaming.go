@@ -3,7 +3,6 @@ package proxy
 import (
 	"bufio"
 	"io"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,7 +22,9 @@ func isStreamingRequest(r *http.Request) bool {
 	}
 	
 	// Check for WebSocket
-	if r.Header.Get("Connection") == "Upgrade" && r.Header.Get("Upgrade") == "websocket" {
+	connection := r.Header.Get("Connection")
+	upgrade := r.Header.Get("Upgrade")
+	if strings.Contains(strings.ToLower(connection), "upgrade") && strings.ToLower(upgrade) == "websocket" {
 		return true
 	}
 	
@@ -44,11 +45,6 @@ func (p *Proxy) handleStreaming(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Set target URL
-	r.URL.Scheme = p.target.Scheme
-	r.URL.Host = p.target.Host
-	r.Host = p.target.Host
-	
 	// Log streaming request
 	p.logger.Debug("Handling streaming request",
 		zap.String("method", r.Method),
@@ -60,12 +56,24 @@ func (p *Proxy) handleStreaming(w http.ResponseWriter, r *http.Request) {
 	
 	// Metrics
 	streamType := "sse"
-	if r.Header.Get("Upgrade") == "websocket" {
+	if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
 		streamType = "websocket"
 	}
 	metrics.ProxyStreamingRequestsTotal.WithLabelValues(streamType, p.target.String()).Inc()
 	
-	// Direct proxy without ResponseRecorder
+	// For WebSocket, use the standard reverse proxy which handles upgrades automatically
+	if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
+		// The httputil.ReverseProxy handles WebSocket upgrades correctly
+		p.reverseProxy.ServeHTTP(w, r)
+		
+		// Record success (we can't easily get the actual status for WebSocket)
+		p.circuitBreaker.RecordSuccess()
+		duration := time.Since(startTime)
+		metrics.ProxyRequestDuration.WithLabelValues(r.Method, "101", p.target.String()).Observe(duration.Seconds())
+		return
+	}
+	
+	// For SSE, use our custom streaming proxy
 	status := p.streamingProxy(w, r)
 	
 	// Record duration
@@ -75,6 +83,11 @@ func (p *Proxy) handleStreaming(w http.ResponseWriter, r *http.Request) {
 
 // streamingProxy performs direct streaming proxy without buffering
 func (p *Proxy) streamingProxy(w http.ResponseWriter, r *http.Request) int {
+	// Set target URL
+	targetURL := *r.URL
+	targetURL.Scheme = p.target.Scheme
+	targetURL.Host = p.target.Host
+	
 	// Create client request
 	client := &http.Client{
 		Transport: p.reverseProxy.Transport,
@@ -83,11 +96,11 @@ func (p *Proxy) streamingProxy(w http.ResponseWriter, r *http.Request) int {
 	}
 	
 	// Create proxy request
-	proxyReq, err := http.NewRequest(r.Method, r.URL.String(), r.Body)
+	proxyReq, err := http.NewRequest(r.Method, targetURL.String(), r.Body)
 	if err != nil {
 		p.logger.Error("Failed to create proxy request",
 			zap.Error(err),
-			zap.String("target", r.URL.String()),
+			zap.String("target", targetURL.String()),
 		)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return http.StatusBadGateway
@@ -101,7 +114,7 @@ func (p *Proxy) streamingProxy(w http.ResponseWriter, r *http.Request) int {
 	if err != nil {
 		p.logger.Error("Proxy request failed",
 			zap.Error(err),
-			zap.String("target", r.URL.String()),
+			zap.String("target", targetURL.String()),
 		)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return http.StatusBadGateway
@@ -120,13 +133,7 @@ func (p *Proxy) streamingProxy(w http.ResponseWriter, r *http.Request) int {
 		return resp.StatusCode
 	}
 	
-	// Handle WebSocket
-	if resp.Header.Get("Upgrade") == "websocket" {
-		p.handleWebSocketUpgrade(w, r, resp)
-		return resp.StatusCode
-	}
-	
-	// Standard streaming copy
+	// Standard streaming copy for SSE
 	io.Copy(w, resp.Body)
 	return resp.StatusCode
 }
@@ -162,55 +169,17 @@ func (p *Proxy) handleSSEStream(w http.ResponseWriter, body io.Reader) {
 
 // handleWebSocketUpgrade handles WebSocket protocol upgrade
 func (p *Proxy) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request, resp *http.Response) {
-	// Get hijacker
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		p.logger.Error("ResponseWriter does not support hijacking")
-		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
-		return
-	}
+	// WebSocket requires special handling that is more complex than our current implementation
+	// For now, we'll use the standard reverse proxy which handles WebSocket correctly
+	p.logger.Warn("WebSocket upgrade detected but using standard proxy",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("upgrade", r.Header.Get("Upgrade")),
+	)
 	
-	// Hijack the connection
-	clientConn, _, err := hijacker.Hijack()
-	if err != nil {
-		p.logger.Error("Failed to hijack connection", zap.Error(err))
-		http.Error(w, "WebSocket hijack failed", http.StatusInternalServerError)
-		return
-	}
-	defer clientConn.Close()
-	
-	// Get backend connection
-	backendConn, ok := resp.Body.(io.ReadWriteCloser)
-	if !ok {
-		p.logger.Error("Backend response does not support ReadWriteCloser")
-		return
-	}
-	defer backendConn.Close()
-	
-	// Write upgrade response
-	if err := resp.Write(clientConn); err != nil {
-		p.logger.Error("Failed to write upgrade response", zap.Error(err))
-		return
-	}
-	
-	// Start bidirectional copy
-	errChan := make(chan error, 2)
-	
-	go func() {
-		_, err := io.Copy(backendConn, clientConn)
-		errChan <- err
-	}()
-	
-	go func() {
-		_, err := io.Copy(clientConn, backendConn)
-		errChan <- err
-	}()
-	
-	// Wait for either direction to close
-	err = <-errChan
-	if err != nil && err != io.EOF {
-		p.logger.Error("WebSocket proxy error", zap.Error(err))
-	}
+	// The reverse proxy in httputil handles WebSocket upgrades automatically
+	// when it detects the Upgrade header, so we don't need custom handling here.
+	// The streamingProxy function should be modified to use the reverse proxy directly.
 }
 
 // copyHeaders copies headers from source to destination
@@ -220,43 +189,4 @@ func copyHeaders(dst, src http.Header) {
 			dst.Add(k, v)
 		}
 	}
-}
-
-// StreamingResponseWriter wraps http.ResponseWriter to support streaming
-type StreamingResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-	written    bool
-}
-
-// WriteHeader captures the status code
-func (w *StreamingResponseWriter) WriteHeader(code int) {
-	if !w.written {
-		w.statusCode = code
-		w.written = true
-		w.ResponseWriter.WriteHeader(code)
-	}
-}
-
-// Write implements io.Writer
-func (w *StreamingResponseWriter) Write(b []byte) (int, error) {
-	if !w.written {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(b)
-}
-
-// Flush implements http.Flusher
-func (w *StreamingResponseWriter) Flush() {
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// Hijack implements http.Hijacker
-func (w *StreamingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hijacker, ok := w.ResponseWriter.(http.Hijacker); ok {
-		return hijacker.Hijack()
-	}
-	return nil, nil, http.ErrNotSupported
 }

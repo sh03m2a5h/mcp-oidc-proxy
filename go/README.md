@@ -291,6 +291,22 @@ export TRACING_SAMPLE_RATE=0.1
 - Rate limiting for auth endpoints
 - Structured audit logging
 - No external dependencies in binary
+- **Security Headers**: Automatically adds security headers to all responses:
+  - `X-Frame-Options`: Prevents clickjacking
+  - `X-Content-Type-Options`: Prevents MIME sniffing
+  - `X-XSS-Protection`: Legacy XSS protection
+  - `Content-Security-Policy`: Modern XSS/injection protection
+  - `Referrer-Policy`: Controls referrer information
+  - `Permissions-Policy`: Restricts browser features
+
+### Security Headers Impact
+
+The proxy adds strict security headers by default. If your MCP server serves web content that requires specific permissions (e.g., embedding in iframes, loading external scripts), you may need to adjust the CSP policy. The default policy:
+- Blocks all framing (`frame-ancestors 'none'`)
+- Allows only self-hosted scripts and styles
+- Restricts connections to same origin
+
+For applications requiring different policies, consider modifying `DefaultSecurityHeaders` in your deployment.
 
 ## 🗺️ Roadmap
 

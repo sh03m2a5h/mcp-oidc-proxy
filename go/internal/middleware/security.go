@@ -4,23 +4,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Security header constants
+const (
+	HeaderXFrameOptions       = "X-Frame-Options"
+	HeaderXContentTypeOptions = "X-Content-Type-Options"
+	HeaderXXSSProtection      = "X-XSS-Protection"
+	HeaderReferrerPolicy      = "Referrer-Policy"
+	HeaderPermissionsPolicy   = "Permissions-Policy"
+	HeaderContentSecurityPolicy = "Content-Security-Policy"
+)
+
+// Default security header values
+var DefaultSecurityHeaders = map[string]string{
+	HeaderXFrameOptions:       "DENY",
+	HeaderXContentTypeOptions: "nosniff",
+	HeaderXXSSProtection:      "1; mode=block",
+	HeaderReferrerPolicy:      "strict-origin-when-cross-origin",
+	HeaderPermissionsPolicy:   "geolocation=(), microphone=(), camera=()",
+	// Basic CSP that allows self-hosted resources only
+	HeaderContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+}
+
 // SecurityHeadersMiddleware adds security headers to responses
 func SecurityHeadersMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Prevent clickjacking
-		c.Header("X-Frame-Options", "DENY")
-		
-		// Prevent MIME type sniffing
-		c.Header("X-Content-Type-Options", "nosniff")
-		
-		// Enable XSS protection (legacy browsers)
-		c.Header("X-XSS-Protection", "1; mode=block")
-		
-		// Referrer policy
-		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		
-		// Permissions policy (replace Feature-Policy)
-		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		// Apply all security headers
+		for header, value := range DefaultSecurityHeaders {
+			c.Header(header, value)
+		}
 		
 		// Process request
 		c.Next()

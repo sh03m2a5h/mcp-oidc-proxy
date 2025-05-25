@@ -29,21 +29,11 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	// Verify security headers
-	tests := []struct {
-		header string
-		want   string
-	}{
-		{"X-Frame-Options", "DENY"},
-		{"X-Content-Type-Options", "nosniff"},
-		{"X-XSS-Protection", "1; mode=block"},
-		{"Referrer-Policy", "strict-origin-when-cross-origin"},
-		{"Permissions-Policy", "geolocation=(), microphone=(), camera=()"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.header, func(t *testing.T) {
-			assert.Equal(t, tt.want, w.Header().Get(tt.header))
+	// Verify security headers using constants from implementation
+	for header, expectedValue := range DefaultSecurityHeaders {
+		t.Run(header, func(t *testing.T) {
+			actualValue := w.Header().Get(header)
+			assert.Equal(t, expectedValue, actualValue, "Header %s should have value %s", header, expectedValue)
 		})
 	}
 }

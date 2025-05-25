@@ -18,6 +18,7 @@ import (
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/proxy"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/session"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/server"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/tracing"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/pkg/version"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -25,12 +26,13 @@ import (
 
 // App represents the main application
 type App struct {
-	config       *config.Config
-	logger       *zap.Logger
-	server       *server.Server
-	proxy        *proxy.Proxy
-	oidcHandler  *oidc.Handler
-	sessionStore session.Store
+	config         *config.Config
+	logger         *zap.Logger
+	server         *server.Server
+	proxy          *proxy.Proxy
+	oidcHandler    *oidc.Handler
+	sessionStore   session.Store
+	tracingShutdown func(context.Context) error
 }
 
 // New creates a new application instance
@@ -47,6 +49,13 @@ func New(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to setup logger: %w", err)
 	}
 
+	// Initialize tracing
+	ctx := context.Background()
+	tracingShutdown, err := tracing.Initialize(ctx, &cfg.Tracing)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize tracing: %w", err)
+	}
+
 	// Initialize metrics build info
 	metrics.SetBuildInfo(version.Version, version.GitCommit, version.BuildDate)
 
@@ -58,8 +67,7 @@ func New(configPath string) (*App, error) {
 	}
 
 	// Create OIDC handler
-	ctx := context.Background()
-	oidcHandler, err := oidc.NewHandler(ctx, &cfg.OIDC, sessionStore, logger)
+	oidcHandler, err := oidc.NewHandler(ctx, &cfg.OIDC, &cfg.Session, sessionStore, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OIDC handler: %w", err)
 	}
@@ -81,12 +89,13 @@ func New(configPath string) (*App, error) {
 	httpServer := server.New(cfg.Server.ToServerConfig(), logger)
 
 	app := &App{
-		config:       cfg,
-		logger:       logger,
-		server:       httpServer,
-		proxy:        reverseProxy,
-		oidcHandler:  oidcHandler,
-		sessionStore: sessionStore,
+		config:          cfg,
+		logger:          logger,
+		server:          httpServer,
+		proxy:           reverseProxy,
+		oidcHandler:     oidcHandler,
+		sessionStore:    sessionStore,
+		tracingShutdown: tracingShutdown,
 	}
 
 	// Setup routes
@@ -98,6 +107,11 @@ func New(configPath string) (*App, error) {
 // setupRoutes configures the application routes
 func (a *App) setupRoutes() {
 	router := a.server.Router()
+
+	// Apply tracing middleware (first to capture everything)
+	if a.config.Tracing.Enabled {
+		router.Use(middleware.TracingMiddleware(a.config.Tracing.ServiceName))
+	}
 
 	// Apply metrics middleware
 	router.Use(middleware.MetricsMiddleware())
@@ -179,6 +193,13 @@ func (a *App) shutdown(ctx context.Context) error {
 	// Close session store
 	if err := a.sessionStore.Close(); err != nil {
 		a.logger.Error("Failed to close session store", zap.Error(err))
+	}
+
+	// Shutdown tracing
+	if a.tracingShutdown != nil {
+		if err := a.tracingShutdown(ctx); err != nil {
+			a.logger.Error("Failed to shutdown tracing", zap.Error(err))
+		}
 	}
 
 	a.logger.Info("Application shutdown complete")

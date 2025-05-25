@@ -11,6 +11,12 @@ import (
 	"time"
 
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +27,7 @@ type Proxy struct {
 	circuitBreaker *CircuitBreaker
 	retryConfig    RetryConfig
 	logger         *zap.Logger
+	tracer         trace.Tracer
 }
 
 // Config holds proxy configuration
@@ -76,6 +83,10 @@ func New(config *Config, logger *zap.Logger) (*Proxy, error) {
 		req.Header.Set("X-Forwarded-Proto", getScheme(req))
 		req.Header.Set("X-Forwarded-Host", req.Host)
 		
+		// Inject trace context into outgoing request headers
+		propagator := otel.GetTextMapPropagator()
+		propagator.Inject(req.Context(), propagation.HeaderCarrier(req.Header))
+		
 		// Remove hop-by-hop headers
 		removeHopHeaders(req.Header)
 	}
@@ -96,12 +107,16 @@ func New(config *Config, logger *zap.Logger) (*Proxy, error) {
 	// Create circuit breaker
 	circuitBreaker := NewCircuitBreaker(config.CircuitBreaker.Threshold, config.CircuitBreaker.Timeout, logger)
 
+	// Create tracer
+	tracer := otel.Tracer("mcp-oidc-proxy/proxy")
+
 	return &Proxy{
 		target:         targetURL,
 		reverseProxy:   reverseProxy,
 		circuitBreaker: circuitBreaker,
 		retryConfig:    config.Retry,
 		logger:         logger,
+		tracer:         tracer,
 	}, nil
 }
 
@@ -110,15 +125,32 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	start := time.Now()
 
-	// Record circuit breaker state
+	// Create proxy span
+	ctx, span := p.tracer.Start(ctx, "proxy.request",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			semconv.HTTPMethod(r.Method),
+			semconv.HTTPURL(r.URL.String()),
+			semconv.HTTPTarget(r.URL.Path),
+			semconv.NetHostName(p.target.Host),
+			attribute.String("proxy.target", p.target.String()),
+		),
+	)
+	defer span.End()
+
+	// Update request context
+	r = r.WithContext(ctx)
+
+	// Check circuit breaker state
+	allow := p.circuitBreaker.Allow()
 	state := float64(0) // closed
-	if !p.circuitBreaker.Allow() {
+	if !allow {
 		state = float64(1) // open
 	}
 	metrics.CircuitBreakerState.WithLabelValues(p.target.String()).Set(state)
 
-	// Check circuit breaker
-	if !p.circuitBreaker.Allow() {
+	// Handle circuit breaker being open
+	if !allow {
 		p.logger.Warn("Circuit breaker open, rejecting request",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
@@ -126,6 +158,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			zap.String("user_agent", r.UserAgent()),
 			zap.String("remote_addr", r.RemoteAddr),
 			zap.String("target", p.target.String()),
+		)
+		span.SetStatus(codes.Error, "Circuit breaker open")
+		span.SetAttributes(
+			semconv.HTTPStatusCode(http.StatusServiceUnavailable),
+			attribute.String("error.type", "circuit_breaker_open"),
 		)
 		metrics.ProxyRequestsTotal.WithLabelValues(r.Method, "503", p.target.String()).Inc()
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -143,6 +180,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := strconv.Itoa(statusCode)
 	metrics.ProxyRequestsTotal.WithLabelValues(r.Method, status, p.target.String()).Inc()
 	metrics.ProxyRequestDuration.WithLabelValues(r.Method, status, p.target.String()).Observe(duration)
+	
+	// Update span with final status
+	span.SetAttributes(
+		semconv.HTTPStatusCode(statusCode),
+		attribute.Float64("proxy.duration_seconds", duration),
+	)
+	
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		span.SetAttributes(attribute.String("error.message", err.Error()))
+	} else if statusCode >= 400 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", statusCode))
+	}
 	
 	// Record result in circuit breaker
 	if err != nil {
@@ -237,6 +287,15 @@ func (p *Proxy) executeWithRetry(ctx context.Context, w http.ResponseWriter, r *
 
 // Health checks if the target server is healthy
 func (p *Proxy) Health(ctx context.Context) error {
+	// Create health check span
+	ctx, span := p.tracer.Start(ctx, "proxy.health_check",
+		trace.WithAttributes(
+			attribute.String("proxy.target", p.target.String()),
+			semconv.HTTPMethod(http.MethodGet),
+		),
+	)
+	defer span.End()
+
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -246,19 +305,31 @@ func (p *Proxy) Health(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
 	if err != nil {
+		span.SetStatus(codes.Error, "Failed to create request")
+		span.SetAttributes(attribute.String("error.message", err.Error()))
 		return fmt.Errorf("failed to create health check request: %w", err)
 	}
 
+	// Inject trace context into health check request
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 	resp, err := client.Do(req)
 	if err != nil {
+		span.SetStatus(codes.Error, "Health check failed")
+		span.SetAttributes(attribute.String("error.message", err.Error()))
 		return fmt.Errorf("health check failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	span.SetAttributes(semconv.HTTPStatusCode(resp.StatusCode))
+
 	if resp.StatusCode >= 400 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
 		return fmt.Errorf("health check returned status %d", resp.StatusCode)
 	}
 
+	span.SetStatus(codes.Ok, "Health check passed")
 	return nil
 }
 

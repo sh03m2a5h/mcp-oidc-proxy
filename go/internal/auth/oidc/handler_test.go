@@ -116,7 +116,7 @@ func TestNewHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			handler, err := NewHandler(ctx, tt.config, mockStore, logger)
+			handler, err := NewHandler(ctx, tt.config, &config.SessionConfig{}, mockStore, logger)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -167,7 +167,7 @@ func TestAuthorize(t *testing.T) {
 	}
 
 	mockStore := new(MockSessionStore)
-	handler, err := NewHandler(context.Background(), cfg, mockStore, logger)
+	handler, err := NewHandler(context.Background(), cfg, &config.SessionConfig{}, mockStore, logger)
 	require.NoError(t, err)
 
 	// Set up expectation for session creation
@@ -267,6 +267,12 @@ func TestCallback(t *testing.T) {
 
 			// Create dummy handler (won't actually use OIDC client in these tests)
 			handler := &Handler{
+				config: &config.OIDCConfig{
+					ProviderName: "test-provider",
+				},
+				sessionConfig: &config.SessionConfig{
+					CookieSecure: false, // For testing
+				},
 				sessionStore: mockStore,
 				logger:       logger,
 			}
@@ -350,6 +356,7 @@ func TestLogout(t *testing.T) {
 				sessionStore: mockStore,
 				logger:       logger,
 				config: &config.OIDCConfig{
+					ProviderName:          "test-provider",
 					EndSessionEndpoint:    tt.endSessionEndpoint,
 					PostLogoutRedirectURI: postLogoutURI,
 				},

@@ -17,14 +17,15 @@ import (
 
 // Handler handles OIDC authentication
 type Handler struct {
-	client       *Client
-	sessionStore session.Store
-	config       *config.OIDCConfig
-	logger       *zap.Logger
+	client         *Client
+	sessionStore   session.Store
+	config         *config.OIDCConfig
+	sessionConfig  *config.SessionConfig
+	logger         *zap.Logger
 }
 
 // NewHandler creates a new OIDC handler
-func NewHandler(ctx context.Context, cfg *config.OIDCConfig, sessionStore session.Store, logger *zap.Logger) (*Handler, error) {
+func NewHandler(ctx context.Context, cfg *config.OIDCConfig, sessionCfg *config.SessionConfig, sessionStore session.Store, logger *zap.Logger) (*Handler, error) {
 	// Validate configuration
 	if cfg.DiscoveryURL == "" {
 		return nil, fmt.Errorf("OIDC discovery URL is required")
@@ -46,10 +47,11 @@ func NewHandler(ctx context.Context, cfg *config.OIDCConfig, sessionStore sessio
 	}
 
 	return &Handler{
-		client:       client,
-		sessionStore: sessionStore,
-		config:       cfg,
-		logger:       logger,
+		client:        client,
+		sessionStore:  sessionStore,
+		config:        cfg,
+		sessionConfig: sessionCfg,
+		logger:        logger,
 	}, nil
 }
 
@@ -243,7 +245,7 @@ func (h *Handler) Callback(c *gin.Context) {
 		int(24*time.Hour/time.Second), // 24 hours
 		"/",
 		"", // Domain (empty = current domain)
-		false, // Secure (set to true in production with HTTPS)
+		h.sessionConfig.CookieSecure, // Use session config
 		true,  // HttpOnly
 	)
 

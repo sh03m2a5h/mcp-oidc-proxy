@@ -10,23 +10,29 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/auth/oidc"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/middleware"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/proxy"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/session"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/server"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/tracing"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/pkg/version"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // App represents the main application
 type App struct {
-	config       *config.Config
-	logger       *zap.Logger
-	server       *server.Server
-	proxy        *proxy.Proxy
-	oidcHandler  *oidc.Handler
-	sessionStore session.Store
+	config         *config.Config
+	logger         *zap.Logger
+	server         *server.Server
+	proxy          *proxy.Proxy
+	oidcHandler    *oidc.Handler
+	sessionStore   session.Store
+	tracingShutdown func(context.Context) error
 }
 
 // New creates a new application instance
@@ -43,6 +49,16 @@ func New(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to setup logger: %w", err)
 	}
 
+	// Initialize tracing
+	ctx := context.Background()
+	tracingShutdown, err := tracing.Initialize(ctx, &cfg.Tracing)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize tracing: %w", err)
+	}
+
+	// Initialize metrics build info
+	metrics.SetBuildInfo(version.Version, version.GitCommit, version.BuildDate)
+
 	// Create session store
 	factory := session.NewFactory(logger)
 	sessionStore, err := factory.CreateStore(&cfg.Session)
@@ -51,8 +67,7 @@ func New(configPath string) (*App, error) {
 	}
 
 	// Create OIDC handler
-	ctx := context.Background()
-	oidcHandler, err := oidc.NewHandler(ctx, &cfg.OIDC, sessionStore, logger)
+	oidcHandler, err := oidc.NewHandler(ctx, &cfg.OIDC, &cfg.Session, sessionStore, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OIDC handler: %w", err)
 	}
@@ -74,12 +89,13 @@ func New(configPath string) (*App, error) {
 	httpServer := server.New(cfg.Server.ToServerConfig(), logger)
 
 	app := &App{
-		config:       cfg,
-		logger:       logger,
-		server:       httpServer,
-		proxy:        reverseProxy,
-		oidcHandler:  oidcHandler,
-		sessionStore: sessionStore,
+		config:          cfg,
+		logger:          logger,
+		server:          httpServer,
+		proxy:           reverseProxy,
+		oidcHandler:     oidcHandler,
+		sessionStore:    sessionStore,
+		tracingShutdown: tracingShutdown,
 	}
 
 	// Setup routes
@@ -92,8 +108,25 @@ func New(configPath string) (*App, error) {
 func (a *App) setupRoutes() {
 	router := a.server.Router()
 
+	// Apply tracing middleware (first to capture everything)
+	if a.config.Tracing.Enabled {
+		router.Use(middleware.TracingMiddleware(a.config.Tracing.ServiceName))
+	}
+
+	// Apply metrics middleware
+	router.Use(middleware.MetricsMiddleware())
+
+	// Apply structured logging middleware
+	router.Use(middleware.StructuredLoggingMiddleware(a.logger))
+	router.Use(middleware.RequestContextMiddleware())
+
 	// Health check endpoint (public)
 	router.GET("/health", a.healthHandler)
+
+	// Metrics endpoint (public)
+	if a.config.Metrics.Enabled {
+		router.GET(a.config.Metrics.Path, gin.WrapH(promhttp.Handler()))
+	}
 
 	// OIDC authentication routes
 	router.GET("/login", a.oidcHandler.Authorize)
@@ -101,7 +134,7 @@ func (a *App) setupRoutes() {
 	router.POST("/logout", a.oidcHandler.Logout)
 
 	// Apply authentication middleware to all other routes
-	authMiddleware := oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback"})
+	authMiddleware := oidc.AuthMiddleware(a.sessionStore, a.logger, []string{"/health", "/login", "/callback", a.config.Metrics.Path})
 	
 	// Protected routes group
 	protected := router.Group("/")
@@ -162,37 +195,64 @@ func (a *App) shutdown(ctx context.Context) error {
 		a.logger.Error("Failed to close session store", zap.Error(err))
 	}
 
+	// Shutdown tracing
+	if a.tracingShutdown != nil {
+		if err := a.tracingShutdown(ctx); err != nil {
+			a.logger.Error("Failed to shutdown tracing", zap.Error(err))
+		}
+	}
+
 	a.logger.Info("Application shutdown complete")
 	return nil
 }
 
 // healthHandler handles health check requests
 func (a *App) healthHandler(c *gin.Context) {
-	// Check proxy target health
-	if err := a.proxy.Health(c.Request.Context()); err != nil {
-		a.logger.Warn("Proxy target health check failed", zap.Error(err))
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"status": "unhealthy",
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	// Check session store health
-	if _, err := a.sessionStore.Stats(c.Request.Context()); err != nil {
-		a.logger.Warn("Session store health check failed", zap.Error(err))
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"status": "unhealthy",
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "healthy",
+	ctx := c.Request.Context()
+	
+	// Initialize health response
+	health := gin.H{
+		"status":    "healthy",
 		"timestamp": time.Now().UTC(),
-		"version": version.Version,
-	})
+		"version":   version.Version,
+		"checks":    gin.H{},
+	}
+	
+	overallHealthy := true
+	
+	// Check proxy target health
+	proxyHealth := gin.H{"status": "healthy"}
+	if err := a.proxy.Health(ctx); err != nil {
+		a.logger.Warn("Proxy target health check failed", zap.Error(err))
+		proxyHealth["status"] = "unhealthy"
+		proxyHealth["error"] = err.Error()
+		overallHealthy = false
+	}
+	health["checks"].(gin.H)["proxy_target"] = proxyHealth
+	
+	// Check session store health
+	sessionHealth := gin.H{"status": "healthy"}
+	if stats, err := a.sessionStore.Stats(ctx); err != nil {
+		a.logger.Warn("Session store health check failed", zap.Error(err))
+		sessionHealth["status"] = "unhealthy"
+		sessionHealth["error"] = err.Error()
+		overallHealthy = false
+	} else {
+		if s, ok := stats.(*session.Stats); ok {
+			sessionHealth["active_sessions"] = s.ActiveSessions
+			sessionHealth["store_type"] = s.StoreType
+		}
+	}
+	health["checks"].(gin.H)["session_store"] = sessionHealth
+	
+	// Set overall status
+	if !overallHealthy {
+		health["status"] = "degraded"
+		c.JSON(http.StatusServiceUnavailable, health)
+		return
+	}
+	
+	c.JSON(http.StatusOK, health)
 }
 
 // sessionHandler handles session info requests
@@ -235,13 +295,31 @@ func setupLogger(config *config.LoggingConfig) (*zap.Logger, error) {
 		zapConfig.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
 	}
 
-	// Set output format
+	// Set encoding based on format
 	if config.Format == "console" {
 		zapConfig.Encoding = "console"
 		zapConfig.EncoderConfig = zap.NewDevelopmentEncoderConfig()
+		zapConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	} else {
 		zapConfig.Encoding = "json"
 		zapConfig.EncoderConfig = zap.NewProductionEncoderConfig()
+		zapConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	}
+
+	// Add caller information for debug and development
+	if config.Level == "debug" || config.Format == "console" {
+		zapConfig.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+		zapConfig.Development = true
+	}
+
+	// Set output paths
+	zapConfig.OutputPaths = []string{config.Output}
+	zapConfig.ErrorOutputPaths = []string{config.Output}
+
+	// Add service name and version to all logs
+	zapConfig.InitialFields = map[string]interface{}{
+		"service": "mcp-oidc-proxy",
+		"version": version.Version,
 	}
 
 	return zapConfig.Build()

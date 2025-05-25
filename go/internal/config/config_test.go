@@ -31,6 +31,17 @@ func TestLoad_DefaultConfig(t *testing.T) {
 	assert.Equal(t, "memory", cfg.Session.Store)
 	assert.Equal(t, "bypass", cfg.Auth.Mode) // We set it to bypass
 	assert.Equal(t, "info", cfg.Logging.Level)
+
+	// Metrics defaults
+	assert.True(t, cfg.Metrics.Enabled)
+	assert.Equal(t, "/metrics", cfg.Metrics.Path)
+
+	// Tracing defaults  
+	assert.False(t, cfg.Tracing.Enabled)
+	assert.Equal(t, "jaeger", cfg.Tracing.Provider)
+	assert.Equal(t, "", cfg.Tracing.Endpoint) // No default endpoint
+	assert.Equal(t, "mcp-oidc-proxy", cfg.Tracing.ServiceName)
+	assert.Equal(t, 0.1, cfg.Tracing.SampleRate)
 }
 
 func TestLoad_FromFile(t *testing.T) {

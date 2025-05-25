@@ -24,14 +24,26 @@ func NewFactory(logger *zap.Logger) *Factory {
 
 // CreateStore creates a session store based on the configuration
 func (f *Factory) CreateStore(config *config.SessionConfig) (Store, error) {
+	var store Store
+	var err error
+
 	switch config.Store {
 	case "redis":
-		return f.createRedisStore(config)
+		store, err = f.createRedisStore(config)
 	case "memory":
-		return f.createMemoryStore(config)
+		store, err = f.createMemoryStore(config)
 	default:
 		return nil, fmt.Errorf("unsupported session store type: %s", config.Store)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap with metrics
+	store = NewMetricsStore(store, config.Store)
+
+	return store, nil
 }
 
 // createRedisStore creates a Redis session store

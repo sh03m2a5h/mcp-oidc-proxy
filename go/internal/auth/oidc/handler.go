@@ -10,20 +10,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/session"
 	"go.uber.org/zap"
 )
 
 // Handler handles OIDC authentication
 type Handler struct {
-	client       *Client
-	sessionStore session.Store
-	config       *config.OIDCConfig
-	logger       *zap.Logger
+	client         *Client
+	sessionStore   session.Store
+	config         *config.OIDCConfig
+	sessionConfig  *config.SessionConfig
+	logger         *zap.Logger
 }
 
 // NewHandler creates a new OIDC handler
-func NewHandler(ctx context.Context, cfg *config.OIDCConfig, sessionStore session.Store, logger *zap.Logger) (*Handler, error) {
+func NewHandler(ctx context.Context, cfg *config.OIDCConfig, sessionCfg *config.SessionConfig, sessionStore session.Store, logger *zap.Logger) (*Handler, error) {
 	// Validate configuration
 	if cfg.DiscoveryURL == "" {
 		return nil, fmt.Errorf("OIDC discovery URL is required")
@@ -45,10 +47,11 @@ func NewHandler(ctx context.Context, cfg *config.OIDCConfig, sessionStore sessio
 	}
 
 	return &Handler{
-		client:       client,
-		sessionStore: sessionStore,
-		config:       cfg,
-		logger:       logger,
+		client:        client,
+		sessionStore:  sessionStore,
+		config:        cfg,
+		sessionConfig: sessionCfg,
+		logger:        logger,
 	}, nil
 }
 
@@ -57,7 +60,12 @@ func (h *Handler) Authorize(c *gin.Context) {
 	// Generate state for CSRF protection
 	state, err := generateRandomString(32)
 	if err != nil {
-		h.logger.Error("Failed to generate state", zap.Error(err))
+		h.logger.Error("Failed to generate state",
+			zap.Error(err),
+			zap.String("remote_addr", c.Request.RemoteAddr),
+			zap.String("user_agent", c.Request.UserAgent()),
+		)
+		metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "error").Inc()
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to generate state",
 		})
@@ -103,6 +111,10 @@ func (h *Handler) Authorize(c *gin.Context) {
 
 // Callback handles the authorization callback
 func (h *Handler) Callback(c *gin.Context) {
+	start := time.Now()
+	defer func() {
+		metrics.AuthCallbackDuration.Observe(time.Since(start).Seconds())
+	}()
 	// Get state and code from query parameters
 	state := c.Query("state")
 	code := c.Query("code")
@@ -115,6 +127,7 @@ func (h *Handler) Callback(c *gin.Context) {
 			zap.String("error", errorParam),
 			zap.String("description", errorDesc),
 		)
+		metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "error").Inc()
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":             errorParam,
 			"error_description": errorDesc,
@@ -222,6 +235,9 @@ func (h *Handler) Callback(c *gin.Context) {
 		zap.String("session_id", sessionID),
 	)
 
+	// Record successful callback
+	metrics.AuthRequestsTotal.WithLabelValues(h.config.ProviderName, "success").Inc()
+
 	// Set session cookie
 	c.SetCookie(
 		"session_id",
@@ -229,7 +245,7 @@ func (h *Handler) Callback(c *gin.Context) {
 		int(24*time.Hour/time.Second), // 24 hours
 		"/",
 		"", // Domain (empty = current domain)
-		false, // Secure (set to true in production with HTTPS)
+		h.sessionConfig.CookieSecure, // Use session config
 		true,  // HttpOnly
 	)
 

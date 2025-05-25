@@ -43,6 +43,6 @@ type Stats struct {
 	ActiveSessions int64  `json:"active_sessions"`
 	TotalCreated   int64  `json:"total_created"`
 	TotalDeleted   int64  `json:"total_deleted"`
-	Store          string `json:"store"`
+	StoreType      string `json:"store_type"`
 	Info           string `json:"info,omitempty"`
 }

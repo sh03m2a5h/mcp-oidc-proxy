@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        working-directory: ./go
+        run: |
+          make deps
+          make build-all
+
+      - name: Create checksums
+        working-directory: ./go/bin
+        run: |
+          sha256sum * > SHA256SUMS
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            go/bin/mcp-oidc-proxy-*
+            go/bin/SHA256SUMS
+          body: |
+            ## 🚀 MCP OIDC Proxy ${{ steps.version.outputs.VERSION }}
+            
+            ### Installation
+            
+            1. Download the appropriate binary for your platform
+            2. Make it executable: `chmod +x mcp-oidc-proxy-*`
+            3. Copy to your PATH or run directly
+            
+            ### Quick Start
+            ```bash
+            # Configure OIDC
+            export OIDC_DISCOVERY_URL="https://your-provider/.well-known/openid-configuration"
+            export OIDC_CLIENT_ID="your-client-id"
+            export OIDC_CLIENT_SECRET="your-client-secret"
+            export OIDC_REDIRECT_URL="http://localhost:8080/callback"
+            
+            # Configure target MCP server
+            export PROXY_TARGET_HOST="localhost"
+            export PROXY_TARGET_PORT="3000"
+            
+            # Run
+            ./mcp-oidc-proxy-linux-amd64
+            ```
+            
+            ### With Cloudflare Tunnel
+            ```bash
+            # Start proxy
+            ./mcp-oidc-proxy-linux-amd64 &
+            
+            # Create tunnel
+            cloudflared tunnel --url http://localhost:8080
+            ```
+            
+            ### Checksums
+            Verify your download with the SHA256SUMS file.

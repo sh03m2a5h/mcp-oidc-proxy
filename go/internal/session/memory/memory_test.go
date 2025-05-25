@@ -303,7 +303,9 @@ func TestAutomaticCleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Initially should have 1 session
+	store.mu.RLock()
 	assert.Len(t, store.sessions, 1)
+	store.mu.RUnlock()
 
 	// Wait for expiration and cleanup
 	time.Sleep(200 * time.Millisecond)

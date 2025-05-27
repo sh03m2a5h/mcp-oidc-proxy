@@ -10,7 +10,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/auth/oidc"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/config"
 	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/metrics"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/middleware"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -28,6 +31,7 @@ type Proxy struct {
 	retryConfig    RetryConfig
 	logger         *zap.Logger
 	tracer         trace.Tracer
+	headerInjector *middleware.HeaderInjector
 }
 
 // Config holds proxy configuration
@@ -37,6 +41,7 @@ type Config struct {
 	TargetScheme   string
 	Retry          RetryConfig
 	CircuitBreaker CircuitBreakerConfig
+	Headers        *config.HeadersConfig
 }
 
 // RetryConfig holds retry configuration
@@ -110,6 +115,12 @@ func New(config *Config, logger *zap.Logger) (*Proxy, error) {
 	// Create tracer
 	tracer := otel.Tracer("mcp-oidc-proxy/proxy")
 
+	// Create header injector if headers config is provided
+	var headerInjector *middleware.HeaderInjector
+	if config.Headers != nil {
+		headerInjector = middleware.NewHeaderInjector(config.Headers, logger)
+	}
+
 	return &Proxy{
 		target:         targetURL,
 		reverseProxy:   reverseProxy,
@@ -117,6 +128,7 @@ func New(config *Config, logger *zap.Logger) (*Proxy, error) {
 		retryConfig:    config.Retry,
 		logger:         logger,
 		tracer:         tracer,
+		headerInjector: headerInjector,
 	}, nil
 }
 
@@ -140,6 +152,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Update request context
 	r = r.WithContext(ctx)
+	
+	// Inject custom headers if configured
+	if p.headerInjector != nil {
+		// Get session from context if available
+		var sess *oidc.UserSession
+		if sessValue := r.Context().Value("session"); sessValue != nil {
+			if s, ok := sessValue.(*oidc.UserSession); ok {
+				sess = s
+			}
+		}
+		p.headerInjector.InjectHeaders(r, sess)
+	}
 	
 	// Check if this is a streaming request
 	if isStreamingRequest(r) {

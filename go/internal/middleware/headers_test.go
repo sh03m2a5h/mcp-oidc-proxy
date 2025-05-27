@@ -278,6 +278,16 @@ func TestHeaderInjector_GetClientIP(t *testing.T) {
 			expected:   "192.168.1.100",
 		},
 		{
+			name:       "IPv6 RemoteAddr with port",
+			remoteAddr: "[2001:db8::1]:8080",
+			expected:   "2001:db8::1",
+		},
+		{
+			name:       "IPv6 RemoteAddr without port",
+			remoteAddr: "2001:db8::1",
+			expected:   "2001:db8::1",
+		},
+		{
 			name:       "No IP information",
 			remoteAddr: "",
 			expected:   "unknown",

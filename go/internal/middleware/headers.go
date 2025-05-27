@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -260,10 +261,11 @@ func (hi *HeaderInjector) getClientIP(r *http.Request) string {
 	
 	// Fall back to RemoteAddr
 	if remoteAddr := r.RemoteAddr; remoteAddr != "" {
-		// Extract IP from "IP:port" format
-		if colonIndex := strings.LastIndex(remoteAddr, ":"); colonIndex > 0 {
-			return remoteAddr[:colonIndex]
+		// Use net.SplitHostPort to handle both IPv4 and IPv6 addresses
+		if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+			return host
 		}
+		// If SplitHostPort fails, assume remoteAddr is the IP itself (no port)
 		return remoteAddr
 	}
 	

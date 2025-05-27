@@ -83,6 +83,7 @@ func New(configPath string) (*App, error) {
 		TargetScheme:   cfg.Proxy.TargetScheme,
 		Retry:          proxy.RetryConfig(cfg.Proxy.Retry),
 		CircuitBreaker: proxy.CircuitBreakerConfig(cfg.Proxy.CircuitBreaker),
+		Headers:        &cfg.Auth.Headers,
 	}
 	reverseProxy, err := proxy.New(proxyConfig, logger)
 	if err != nil {

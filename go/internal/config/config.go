@@ -104,10 +104,29 @@ type AuthConfig struct {
 
 // HeadersConfig holds header configuration
 type HeadersConfig struct {
-	UserID     string `mapstructure:"user_id"`
-	UserEmail  string `mapstructure:"user_email"`
-	UserName   string `mapstructure:"user_name"`
-	UserGroups string `mapstructure:"user_groups"`
+	UserID     string            `mapstructure:"user_id"`
+	UserEmail  string            `mapstructure:"user_email"`
+	UserName   string            `mapstructure:"user_name"`
+	UserGroups string            `mapstructure:"user_groups"`
+	Custom     map[string]string `mapstructure:"custom"`     // Static custom headers
+	Dynamic    DynamicHeaders    `mapstructure:"dynamic"`   // Dynamic header configuration
+}
+
+// DynamicHeaders holds dynamic header generation configuration
+type DynamicHeaders struct {
+	Timestamp     HeaderTemplate `mapstructure:"timestamp"`      // Add timestamp headers
+	RequestID     HeaderTemplate `mapstructure:"request_id"`    // Add request ID headers
+	ClientIP      HeaderTemplate `mapstructure:"client_ip"`     // Add client IP headers
+	UserAgent     HeaderTemplate `mapstructure:"user_agent"`    // Add user agent headers
+	SessionID     HeaderTemplate `mapstructure:"session_id"`    // Add session ID headers
+	CorrelationID HeaderTemplate `mapstructure:"correlation_id"` // Add correlation ID headers
+}
+
+// HeaderTemplate defines how to generate a dynamic header
+type HeaderTemplate struct {
+	Enabled    bool   `mapstructure:"enabled"`     // Whether this header is enabled
+	HeaderName string `mapstructure:"header_name"` // The header name to use
+	Format     string `mapstructure:"format"`      // Format template (for timestamp, etc.)
 }
 
 // AccessControlConfig holds access control configuration

@@ -73,10 +73,44 @@ auth:
   
   # Header configuration
   headers:
+    # User information headers
     user_id: "X-User-ID"
     user_email: "X-User-Email"
     user_name: "X-User-Name"
     user_groups: "X-User-Groups"
+    
+    # Custom static headers
+    custom:
+      X-Service-Name: "mcp-oidc-proxy"
+      X-Service-Version: "1.0.0"
+      X-Environment: "production"
+    
+    # Dynamic headers
+    dynamic:
+      timestamp:
+        enabled: true
+        header_name: "X-Request-Timestamp"
+        format: "rfc3339"  # unix, unix_nano, rfc3339, rfc3339_nano, iso8601, or custom Go format
+      
+      request_id:
+        enabled: true
+        header_name: "X-Request-ID"
+      
+      client_ip:
+        enabled: true
+        header_name: "X-Client-IP"
+      
+      user_agent:
+        enabled: false
+        header_name: "X-User-Agent"
+      
+      session_id:
+        enabled: true
+        header_name: "X-Session-ID"
+      
+      correlation_id:
+        enabled: true
+        header_name: "X-Correlation-ID"
   
   # Access control
   access_control:

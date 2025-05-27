@@ -331,7 +331,7 @@ func TestHeaderInjector_Middleware(t *testing.T) {
 	sess := &oidc.UserSession{
 		ID: "user123",
 	}
-	ctx := context.WithValue(req.Context(), "session", sess)
+	ctx := context.WithValue(req.Context(), oidc.SessionContextKey{}, sess)
 	req = req.WithContext(ctx)
 	
 	// Execute middleware

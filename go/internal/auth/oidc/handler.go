@@ -15,6 +15,21 @@ import (
 	"go.uber.org/zap"
 )
 
+// SessionContextKey is the key for UserSession in context.
+// Using a custom type avoids string collisions.
+type SessionContextKey struct{}
+
+// GetSessionFromContext retrieves the UserSession from the request context.
+// Returns nil if no session is found or if the session type is incorrect.
+func GetSessionFromContext(ctx context.Context) *UserSession {
+	if sessValue := ctx.Value(SessionContextKey{}); sessValue != nil {
+		if sess, ok := sessValue.(*UserSession); ok {
+			return sess
+		}
+	}
+	return nil
+}
+
 // Handler handles OIDC authentication
 type Handler struct {
 	client         *Client

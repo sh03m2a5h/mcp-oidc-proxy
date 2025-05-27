@@ -156,12 +156,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Inject custom headers if configured
 	if p.headerInjector != nil {
 		// Get session from context if available
-		var sess *oidc.UserSession
-		if sessValue := r.Context().Value("session"); sessValue != nil {
-			if s, ok := sessValue.(*oidc.UserSession); ok {
-				sess = s
-			}
-		}
+		sess := oidc.GetSessionFromContext(r.Context())
 		p.headerInjector.InjectHeaders(r, sess)
 	}
 	

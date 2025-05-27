@@ -274,12 +274,7 @@ func (hi *HeaderInjector) getClientIP(r *http.Request) string {
 func (hi *HeaderInjector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get session from context if available
-		var sess *oidc.UserSession
-		if sessValue := r.Context().Value("session"); sessValue != nil {
-			if s, ok := sessValue.(*oidc.UserSession); ok {
-				sess = s
-			}
-		}
+		sess := oidc.GetSessionFromContext(r.Context())
 		
 		// Inject headers
 		hi.InjectHeaders(r, sess)

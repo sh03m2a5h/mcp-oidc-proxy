@@ -1,7 +1,10 @@
 package middleware
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
+	"github.com/sh03m2a5h/mcp-oidc-proxy-go/internal/auth/oidc"
 	"go.uber.org/zap"
 )
 
@@ -65,8 +68,18 @@ func StructuredLoggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
 }
 
 // RequestContextMiddleware adds request context information for logging
+// and transfers session data from Gin context to standard HTTP context
 func RequestContextMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Before processing request, transfer session from Gin context to HTTP context
+		if userSession, exists := c.Get("user_session"); exists {
+			if sess, ok := userSession.(*oidc.UserSession); ok {
+				// Add session to the HTTP request context using typed key
+				ctx := context.WithValue(c.Request.Context(), oidc.SessionContextKey{}, sess)
+				c.Request = c.Request.WithContext(ctx)
+			}
+		}
+
 		// Process request
 		c.Next()
 

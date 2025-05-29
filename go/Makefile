@@ -59,7 +59,9 @@ lint:
 	@if [ -x "$$(command -v golangci-lint)" ]; then \
 		golangci-lint run; \
 	else \
-		echo "golangci-lint not installed, skipping..."; \
+		echo "golangci-lint not installed, installing..."; \
+		go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
+		golangci-lint run; \
 	fi
 
 ## fmt: Format code

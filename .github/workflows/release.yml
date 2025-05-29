@@ -8,9 +8,47 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    working-directory: ./go
+
 jobs:
-  release:
+  test:
+    name: Pre-release Tests
     runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-1.23-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-1.23-
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: make deps
+
+      - name: Run tests
+        run: make test
+
+      - name: Run linters
+        run: make lint
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [test]
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,27 +60,46 @@ jobs:
         with:
           go-version: '1.23'
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-1.23-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-1.23-
+            ${{ runner.os }}-go-
+
       - name: Get version
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Build binaries
-        working-directory: ./go
         run: |
           make deps
           make build-all
 
       - name: Create checksums
-        working-directory: ./go/bin
+        working-directory: ./bin
         run: |
           sha256sum * > SHA256SUMS
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ -f ../CHANGELOG.md ]; then
+            # Extract changelog for this version
+            sed -n '/^## \['"${GITHUB_REF#refs/tags/}"'\]/,/^## \[/p' ../CHANGELOG.md | sed '$d' > /tmp/changelog.md
+          else
+            echo "## Changes" > /tmp/changelog.md
+            echo "See commit history for detailed changes." >> /tmp/changelog.md
+          fi
+
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ steps.version.outputs.VERSION }}
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
           generate_release_notes: true
           files: |
             go/bin/mcp-oidc-proxy-*
@@ -50,36 +107,88 @@ jobs:
           body: |
             ## 🚀 MCP OIDC Proxy ${{ steps.version.outputs.VERSION }}
             
-            ### Installation
+            A production-ready OAuth 2.1/OIDC authentication proxy for Model Context Protocol (MCP) servers.
             
-            1. Download the appropriate binary for your platform
+            ### 📦 Installation
+            
+            #### Option 1: Download Binary
+            1. Download the appropriate binary for your platform from the assets below
             2. Make it executable: `chmod +x mcp-oidc-proxy-*`
             3. Copy to your PATH or run directly
             
-            ### Quick Start
+            #### Option 2: Go Install
             ```bash
-            # Configure OIDC
-            export OIDC_DISCOVERY_URL="https://your-provider/.well-known/openid-configuration"
+            go install github.com/sh03m2a5h/mcp-oidc-proxy/go/cmd/mcp-oidc-proxy@${{ steps.version.outputs.VERSION }}
+            ```
+            
+            ### ⚡ Quick Start
+            
+            #### Environment Variables
+            ```bash
+            # OIDC Configuration
+            export OIDC_DISCOVERY_URL="https://accounts.google.com/.well-known/openid-configuration"
             export OIDC_CLIENT_ID="your-client-id"
             export OIDC_CLIENT_SECRET="your-client-secret"
             export OIDC_REDIRECT_URL="http://localhost:8080/callback"
             
-            # Configure target MCP server
+            # Target MCP Server
             export PROXY_TARGET_HOST="localhost"
             export PROXY_TARGET_PORT="3000"
             
-            # Run
+            # Optional: Authentication Mode
+            export AUTH_MODE="oidc"  # or "bypass" for testing
+            ```
+            
+            #### Run the Proxy
+            ```bash
             ./mcp-oidc-proxy-linux-amd64
             ```
             
-            ### With Cloudflare Tunnel
+            ### 🌩️ With Cloudflare Tunnel
             ```bash
-            # Start proxy
+            # Start the proxy
             ./mcp-oidc-proxy-linux-amd64 &
             
-            # Create tunnel
+            # Create secure tunnel
             cloudflared tunnel --url http://localhost:8080
             ```
             
-            ### Checksums
-            Verify your download with the SHA256SUMS file.
+            ### 🏗️ Configuration File
+            You can also use a YAML configuration file:
+            ```bash
+            ./mcp-oidc-proxy-linux-amd64 --config config.yaml
+            ```
+            
+            See `go/configs/config.example.yaml` for a complete configuration example.
+            
+            ### 🔧 Advanced Features
+            - **Custom Headers**: Inject user info and custom headers
+            - **Session Management**: Memory or Redis-based sessions  
+            - **Circuit Breaker**: Automatic failure detection and recovery
+            - **Metrics**: Prometheus-compatible metrics endpoint
+            - **Tracing**: OpenTelemetry support
+            - **SSE/WebSocket**: Full streaming support
+            
+            ### 🧪 Testing
+            For OAuth2 real environment testing, see:
+            - Testing Guide: `docs/oauth2-testing-guide.md`
+            - Test Scripts: `tests/integration/oauth2-manual-test.sh`
+            - Provider Templates: `go/configs/config-*.yaml`
+            
+            ### 🔐 Security
+            - PKCE (Proof Key for Code Exchange) support
+            - CSRF protection with state parameter validation
+            - Secure session cookie handling
+            - Comprehensive security headers
+            
+            ### 📋 Supported Platforms
+            - Linux (AMD64, ARM64)
+            - macOS (AMD64, ARM64)  
+            - Windows (AMD64)
+            
+            ### ✅ Checksums
+            Verify your download integrity with the SHA256SUMS file provided in the release assets.
+            
+            ---
+            
+            For detailed documentation, visit the [repository](https://github.com/sh03m2a5h/mcp-oidc-proxy).

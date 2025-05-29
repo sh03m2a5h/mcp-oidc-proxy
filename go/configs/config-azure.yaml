@@ -1,0 +1,74 @@
+# Microsoft Azure AD Test Configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: "30s"
+  write_timeout: "30s"
+
+proxy:
+  target_host: "localhost"
+  target_port: 3000
+  target_scheme: "http"
+  retry:
+    max_attempts: 3
+    backoff: "10ms"
+  circuit_breaker:
+    threshold: 5
+    timeout: "30s"
+
+auth:
+  mode: "oidc"
+  oidc:
+    provider_name: "Azure AD"
+    discovery_url: "https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0/.well-known/openid-configuration"
+    client_id: "${AZURE_CLIENT_ID}"
+    client_secret: "${AZURE_CLIENT_SECRET}"
+    redirect_url: "http://localhost:8080/callback"
+    scopes: ["openid", "email", "profile"]
+  
+  headers:
+    user_id: "X-User-ID"
+    user_email: "X-User-Email"
+    user_name: "X-User-Name"
+    user_groups: "X-User-Groups"
+    
+    custom:
+      X-Service-Name: "mcp-oidc-proxy"
+      X-Provider: "Azure"
+      X-Environment: "test"
+    
+    dynamic:
+      timestamp:
+        enabled: true
+        header_name: "X-Request-Timestamp"
+        format: "rfc3339"
+      
+      request_id:
+        enabled: true
+        header_name: "X-Request-ID"
+      
+      client_ip:
+        enabled: true
+        header_name: "X-Client-IP"
+      
+      correlation_id:
+        enabled: true
+        header_name: "X-Correlation-ID"
+
+session:
+  store_type: "memory"
+  memory:
+    cleanup_interval: "10m"
+  cookie_name: "session_id"
+  max_age: "24h"
+
+logging:
+  level: "debug"
+  format: "json"
+
+metrics:
+  enabled: true
+  path: "/metrics"
+
+tracing:
+  enabled: false

@@ -1,0 +1,136 @@
+name: 🐛 Bug Report
+description: Report a bug to help us improve
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+      
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Configure proxy with...
+        2. Start server with...
+        3. Access URL...
+        4. See error...
+    validations:
+      required: true
+      
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+      placeholder: What should have happened?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: A clear and concise description of what actually happened.
+      placeholder: What actually happened?
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - Authentication (OIDC)
+        - Proxy (Request forwarding)
+        - Session Management
+        - Configuration
+        - Headers (Custom/Dynamic)
+        - Streaming (SSE/WebSocket)
+        - Circuit Breaker
+        - Metrics
+        - Other
+    validations:
+      required: true
+      
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of MCP OIDC Proxy are you running?
+      placeholder: v1.0.0 or commit hash
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: oidc-provider
+    attributes:
+      label: OIDC Provider
+      description: Which OIDC provider are you using? (if applicable)
+      options:
+        - Google
+        - Microsoft Azure AD
+        - Auth0
+        - Keycloak
+        - Other
+        - Not applicable
+        
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Environment details
+      value: |
+        - OS: 
+        - Go version: 
+        - Browser (if applicable): 
+        - Deployment method: 
+      render: markdown
+    validations:
+      required: true
+      
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output (please remove any sensitive information)
+      render: shell
+      
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Relevant configuration (please remove any secrets)
+      render: yaml
+      
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any additional information that might be helpful
+      
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched for existing issues
+          required: true
+        - label: I have removed any sensitive information from logs/config
+          required: true
+        - label: I can reproduce this issue consistently
+          required: false

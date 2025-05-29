@@ -1,0 +1,96 @@
+name: 🔒 Security Issue
+description: Report a security vulnerability (private disclosure)
+title: "[Security] "
+labels: ["security", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Security Disclosure Policy**
+        
+        If you've found a security vulnerability, please **DO NOT** create a public issue.
+        Instead, please use GitHub's private vulnerability reporting feature or email: **sh03m2a5h@users.noreply.github.com**
+        
+        For non-sensitive security improvements or questions, you can use this template.
+        
+  - type: checkboxes
+    id: sensitivity
+    attributes:
+      label: Security Issue Type
+      description: What type of security issue is this?
+      options:
+        - label: "🔓 Security vulnerability (DO NOT USE - email instead)"
+        - label: "🛡️ Security enhancement/hardening suggestion"
+        - label: "❓ Security best practices question"
+        - label: "📋 Security audit/review request"
+    validations:
+      required: true
+      
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the security concern or enhancement
+      placeholder: Please describe the security issue or enhancement...
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is this related to?
+      options:
+        - Authentication (OIDC)
+        - Session Management
+        - Headers/Security Headers
+        - Proxy/Request Handling
+        - Configuration
+        - Dependencies
+        - Infrastructure/Deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact Level
+      description: What's the potential impact? (for non-vulnerability issues)
+      options:
+        - Informational
+        - Low
+        - Medium
+        - High
+        - Not applicable
+        
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: What security improvement or fix do you recommend?
+      placeholder: I recommend...
+      
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Any security standards, guidelines, or references?
+      placeholder: |
+        - OWASP guidelines
+        - CVE references
+        - Security best practices
+        
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm
+      options:
+        - label: This is NOT a critical security vulnerability (those should be emailed privately)
+          required: true
+        - label: I have reviewed the security documentation
+          required: false
+        - label: I understand this issue will be public
+          required: true
